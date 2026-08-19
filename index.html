@@ -4894,7 +4894,7 @@ function PaginaRelatorios({processos,parcelas,clientes}){
     </div>
   );
 }
-function ModalCriarPrazoIntimacao({intimacao, onConfirm, onClose}){
+function ModalCriarPrazoIntimacao({intimacao, processos, onConfirm, onAbrirProcesso, onClose}){
   const sugestao = detectarPrazo({desc: intimacao.texto || intimacao.teor || ""});
   const [form,setForm] = useState({
     proximoAto: sugestao?.ato || "",
@@ -4903,8 +4903,27 @@ function ModalCriarPrazoIntimacao({intimacao, onConfirm, onClose}){
     base: sugestao?.base || "",
     dataInicio: (intimacao.dataDisponibilizacao || intimacao.data || hoje.toISOString().slice(0,10)).slice(0,10),
   });
+  const [salvo,setSalvo] = useState(false);
   const s=(k,v)=>setForm(f=>({...f,[k]:v}));
   const venc = form.dataInicio && form.diasPrazo > 0 ? calcularVencimento(form.dataInicio, parseInt(form.diasPrazo)) : null;
+
+  if(salvo){
+    const proc = processos.find(p=>String(p.id)===String(intimacao.procId));
+    return (
+      <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+        <div style={{background:"#fff",width:400,maxWidth:"100%",borderRadius:10,padding:"2rem",textAlign:"center",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
+          <div style={{fontSize:30,marginBottom:8}}>✓</div>
+          <p style={{fontSize:15,fontWeight:700,margin:"0 0 4px",color:"var(--navy)"}}>Prazo criado</p>
+          <p style={{fontSize:12.5,color:"var(--text2)",margin:"0 0 22px"}}>{form.proximoAto}</p>
+          <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+            <button onClick={onClose} style={btnSec}>Fechar</button>
+            {proc && <button onClick={()=>{onAbrirProcesso(proc);onClose();}} style={btnPri}>📄 Abrir processo</button>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
       <div style={{background:"#fff",width:480,maxWidth:"100%",borderRadius:10,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
@@ -4931,16 +4950,35 @@ function ModalCriarPrazoIntimacao({intimacao, onConfirm, onClose}){
         </div>
         <div style={{marginTop:16,display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={onClose} style={btnSec}>Cancelar</button>
-          <button onClick={()=>{if(!form.proximoAto||!form.parte)return;onConfirm({proximoAto:form.proximoAto,parte:form.parte,diasPrazo:parseInt(form.diasPrazo),base:form.base,vencimento:venc,ativo:true});}} style={btnPri}>Criar prazo</button>
+          <button onClick={()=>{if(!form.proximoAto||!form.parte)return;onConfirm({proximoAto:form.proximoAto,parte:form.parte,diasPrazo:parseInt(form.diasPrazo),base:form.base,vencimento:venc,ativo:true});setSalvo(true);}} style={btnPri}>Criar prazo</button>
         </div>
       </div>
     </div>
   );
 }
-function ModalCriarTarefaIntimacao({intimacao, equipe, onConfirm, onClose}){
+function ModalCriarTarefaIntimacao({intimacao, processos, equipe, onConfirm, onAbrirProcesso, onClose}){
   const [titulo,setTitulo] = useState("Analisar intimação e providenciar manifestação");
   const [responsavelId,setResponsavelId] = useState("");
   const [prazo,setPrazo] = useState("");
+  const [salvo,setSalvo] = useState(false);
+
+  if(salvo){
+    const proc = intimacao.procId ? processos.find(p=>String(p.id)===String(intimacao.procId)) : null;
+    return (
+      <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+        <div style={{background:"#fff",width:400,maxWidth:"100%",borderRadius:10,padding:"2rem",textAlign:"center",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
+          <div style={{fontSize:30,marginBottom:8}}>✓</div>
+          <p style={{fontSize:15,fontWeight:700,margin:"0 0 4px",color:"var(--navy)"}}>Tarefa criada</p>
+          <p style={{fontSize:12.5,color:"var(--text2)",margin:"0 0 22px"}}>{titulo}</p>
+          <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+            <button onClick={onClose} style={btnSec}>Fechar</button>
+            {proc && <button onClick={()=>{onAbrirProcesso(proc);onClose();}} style={btnPri}>📄 Abrir processo</button>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
       <div style={{background:"#fff",width:440,maxWidth:"100%",borderRadius:10,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
@@ -4959,7 +4997,7 @@ function ModalCriarTarefaIntimacao({intimacao, equipe, onConfirm, onClose}){
         </div>
         <div style={{marginTop:16,display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={onClose} style={btnSec}>Cancelar</button>
-          <button onClick={()=>{if(!titulo.trim())return;onConfirm({titulo,responsavelId:responsavelId?parseInt(responsavelId):"",prazo});}} style={btnPri}>Criar tarefa</button>
+          <button onClick={()=>{if(!titulo.trim())return;onConfirm({titulo,responsavelId:responsavelId?parseInt(responsavelId):"",prazo});setSalvo(true);}} style={btnPri}>Criar tarefa</button>
         </div>
       </div>
     </div>
@@ -5243,7 +5281,6 @@ Use string vazia quando não identificar o dado com segurança. "parteClienteEhA
       return;
     }
     marcarLida(criandoPrazoPara.id);
-    setCriandoPrazoPara(null);
   };
 
   const confirmarTarefa = (dados) => {
@@ -5255,7 +5292,6 @@ Use string vazia quando não identificar o dado com segurança. "parteClienteEhA
       }]);
     }
     marcarLida(criandoTarefaPara.id);
-    setCriandoTarefaPara(null);
   };
 
   const naoLidas = (intimacoes||[]).filter(i=>!i.lida).length;
@@ -5356,8 +5392,8 @@ Use string vazia quando não identificar o dado com segurança. "parteClienteEhA
           })}
         </div>
       )}
-      {criandoPrazoPara&&<ModalCriarPrazoIntimacao intimacao={criandoPrazoPara} onConfirm={confirmarPrazo} onClose={()=>setCriandoPrazoPara(null)}/>}
-      {criandoTarefaPara&&<ModalCriarTarefaIntimacao intimacao={criandoTarefaPara} equipe={equipe||[]} onConfirm={confirmarTarefa} onClose={()=>setCriandoTarefaPara(null)}/>}
+      {criandoPrazoPara&&<ModalCriarPrazoIntimacao intimacao={criandoPrazoPara} processos={processos} onConfirm={confirmarPrazo} onAbrirProcesso={onAbrirProcesso} onClose={()=>setCriandoPrazoPara(null)}/>}
+      {criandoTarefaPara&&<ModalCriarTarefaIntimacao intimacao={criandoTarefaPara} processos={processos} equipe={equipe||[]} onConfirm={confirmarTarefa} onAbrirProcesso={onAbrirProcesso} onClose={()=>setCriandoTarefaPara(null)}/>}
       {cadastrandoDe&&(
         <div onClick={e=>e.target===e.currentTarget&&setCadastrandoDe(null)} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
           <div style={{background:"#fff",width:480,maxWidth:"100%",borderRadius:10,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
@@ -5989,10 +6025,29 @@ Formatação geral: parágrafos justificados, sem recuo de primeira linha (bloco
   );
 }
 
-function ModalFormTarefa({tarefa, processos, clientes, equipe, onSave, onClose}){
+function ModalFormTarefa({tarefa, processos, clientes, equipe, onSave, onClose, onAbrirProcesso}){
   const e0 = {titulo:"",responsavelId:"",procId:"",clienteId:"",status:"pendente",prioridade:"media",prazo:"",desc:""};
   const [f,setF] = useState(tarefa||e0);
+  const [salvo,setSalvo] = useState(false);
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
+
+  if(salvo){
+    const proc = f.procId ? processos.find(p=>String(p.id)===String(f.procId)) : null;
+    return (
+      <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.45)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+        <div style={{background:"#fff",width:400,maxWidth:"100%",borderRadius:10,padding:"2rem",textAlign:"center",boxShadow:"0 25px 60px rgba(0,0,0,.3)"}}>
+          <div style={{fontSize:30,marginBottom:8}}>✓</div>
+          <p style={{fontSize:15,fontWeight:700,margin:"0 0 4px",color:"var(--navy)"}}>{tarefa?"Alterações salvas":"Prazo/tarefa criado"}</p>
+          <p style={{fontSize:12.5,color:"var(--text2)",margin:"0 0 22px"}}>{f.titulo}</p>
+          <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+            <button onClick={onClose} style={btnSec}>Fechar</button>
+            {proc && <button onClick={()=>{onAbrirProcesso(proc);onClose();}} style={btnPri}>📄 Abrir processo</button>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.45)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
       <div style={{background:"#fff",width:460,maxWidth:"100%",maxHeight:"90vh",overflow:"auto",borderRadius:10,padding:"1.75rem",boxShadow:"0 25px 60px rgba(0,0,0,.3)"}}>
@@ -6037,6 +6092,7 @@ function ModalFormTarefa({tarefa, processos, clientes, equipe, onSave, onClose})
           <button onClick={()=>{
             if(!f.titulo.trim()){ alert("Informe o título do prazo/tarefa."); return; }
             onSave(f);
+            if(f.procId) setSalvo(true); else onClose();
           }} style={btnPri}>Salvar</button>
         </div>
       </div>
@@ -6242,6 +6298,8 @@ function CardTarefaDetalhado({t, processos, clientes, equipe, onAbrirProcesso, o
 // Linha compacta de prazo/tarefa — usada na visão "Agrupado". Ações ficam
 // escondidas atrás do menu "⋯" pra manter a linha enxuta; clicar na linha
 // abre o modal de visão rápida.
+const MES_ABREV = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+
 function LinhaTarefaCompacta({t, processos, clientes, onAbrirProcesso, onEditar, onArquivar, onExcluir, onExecutar, onVerRapido, onMudarStatus}){
   const [menuAberto, setMenuAberto] = useState(false);
   const proc = t.procId ? processos.find(p=>String(p.id)===String(t.procId)) : null;
@@ -6253,18 +6311,27 @@ function LinhaTarefaCompacta({t, processos, clientes, onAbrirProcesso, onEditar,
   const naoCumprido = t.status !== "concluido";
   const dias = t.prazo ? diasRest(t.prazo) : null;
   const atrasado = naoCumprido && dias!==null && dias<0;
-  const dotCor = t.status==="concluido" ? "var(--green)" : atrasado ? "var(--red)" : t.status==="em_andamento" ? "var(--accent)" : "var(--text3)";
+  const hojeFlag = naoCumprido && dias===0;
   const prazoTexto = t.prazo ? (dias<0?`venceu há ${Math.abs(dias)} dia(s)`:dias===0?"vence hoje":dias===1?"vence amanhã":`em ${dias} dias`) : null;
   const subtitulo = [nomeCliente, proc?.numero, prazoTexto].filter(Boolean).join(" · ");
 
+  let dataObj = null;
+  if(t.prazo){ const [ano,mes,dia] = t.prazo.split("-").map(Number); dataObj = {dia:String(dia).padStart(2,"0"), mes:MES_ABREV[mes-1]}; }
+  const corData = t.status==="concluido" ? "var(--text3)" : atrasado ? "var(--red)" : hojeFlag ? "var(--amber)" : "var(--text1)";
+
   return (
-    <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#fff",border:"1px solid var(--border1)",borderRadius:6,marginBottom:4}}>
-      <span style={{width:6,height:6,borderRadius:"50%",background:dotCor,flexShrink:0}}/>
-      <div onClick={()=>onVerRapido(t)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
-        <p style={{fontSize:13,fontWeight:600,margin:0,textDecoration:t.status==="concluido"?"line-through":"none",color:t.status==="concluido"?"var(--text3)":"var(--text1)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.titulo}</p>
-        {subtitulo && <p style={{fontSize:11,color:atrasado?"var(--red)":"var(--text2)",margin:"2px 0 0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{subtitulo}</p>}
+    <div style={{display:"flex",alignItems:"flex-start",gap:14,padding:"12px 2px",borderBottom:"1px solid var(--border1)"}}>
+      <div style={{width:36,flexShrink:0,textAlign:"center",paddingTop:1}}>
+        {dataObj ? (<>
+          <div style={{fontSize:18,fontWeight:800,lineHeight:1,color:corData,letterSpacing:"-.3px"}}>{dataObj.dia}</div>
+          <div style={{fontSize:9,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text3)",marginTop:3,fontWeight:700}}>{dataObj.mes}</div>
+        </>) : <div style={{fontSize:15,color:"var(--text3)",paddingTop:2}}>—</div>}
       </div>
-      <div style={{position:"relative",flexShrink:0}}>
+      <div onClick={()=>onVerRapido(t)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+        <p style={{fontSize:14,fontWeight:700,margin:"0 0 3px",textDecoration:t.status==="concluido"?"line-through":"none",color:t.status==="concluido"?"var(--text3)":"var(--text1)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.titulo}</p>
+        {subtitulo && <p style={{fontSize:12,color:atrasado?"var(--red)":"var(--text2)",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{subtitulo}</p>}
+      </div>
+      <div style={{position:"relative",flexShrink:0,paddingTop:2}}>
         <button onClick={()=>setMenuAberto(v=>!v)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text2)",fontSize:15,padding:"4px 8px",lineHeight:1}}>⋯</button>
         {menuAberto && (
           <div onMouseLeave={()=>setMenuAberto(false)} style={{position:"absolute",right:0,top:"110%",background:"#fff",border:"1px solid var(--border1)",borderRadius:7,boxShadow:"0 8px 20px rgba(0,0,0,.12)",overflow:"hidden",zIndex:10,minWidth:170}}>
@@ -6299,12 +6366,12 @@ function TarefasAgrupadas({lista, processos, clientes, equipe, onAbrirProcesso, 
       else futuro.push(t);
     });
     return [
-      {chave:"atrasados", label:"Atrasados", icone:"⚠", cor:"var(--red)", itens:atrasados},
-      {chave:"hoje", label:"Hoje", icone:"📅", cor:"var(--amber)", itens:hoje},
-      {chave:"semana", label:"Esta semana", icone:"🗓", cor:"var(--navy2)", itens:semana},
-      {chave:"futuro", label:"Mais adiante", icone:"⏳", cor:"var(--text2)", itens:futuro},
-      {chave:"sem_prazo", label:"Sem prazo definido", icone:"◇", cor:"var(--text2)", itens:semPrazo},
-      {chave:"concluidas", label:"Concluídas", icone:"✓", cor:"var(--green)", itens:concluidas},
+      {chave:"atrasados", label:"Atrasados", cor:"var(--red)", itens:atrasados},
+      {chave:"hoje", label:"Hoje", cor:"var(--amber)", itens:hoje},
+      {chave:"semana", label:"Esta semana", cor:"var(--navy)", itens:semana},
+      {chave:"futuro", label:"Mais adiante", cor:"var(--text2)", itens:futuro},
+      {chave:"sem_prazo", label:"Sem prazo definido", cor:"var(--text2)", itens:semPrazo},
+      {chave:"concluidas", label:"Concluídas", cor:"var(--green)", itens:concluidas},
     ].filter(g=>g.itens.length>0);
   },[lista]);
 
@@ -6313,10 +6380,9 @@ function TarefasAgrupadas({lista, processos, clientes, equipe, onAbrirProcesso, 
   return (
     <div>
       {grupos.map(g=>(
-        <div key={g.chave} style={{marginBottom:20}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <span style={{fontSize:13}}>{g.icone}</span>
-            <span style={{fontSize:11.5,fontWeight:700,color:g.cor,textTransform:"uppercase",letterSpacing:".6px"}}>{g.label}</span>
+        <div key={g.chave} style={{marginBottom:26}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:9,marginBottom:2,paddingBottom:9,borderBottom:"1.5px solid var(--text1)"}}>
+            <span style={{fontSize:13,fontWeight:800,color:g.cor,letterSpacing:".2px"}}>{g.label}</span>
             <span style={{fontSize:11,color:"var(--text3)"}}>{g.itens.length}</span>
           </div>
           <div style={{opacity:g.chave==="concluidas"?0.6:1}}>
@@ -6359,7 +6425,6 @@ function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, 
 
   const salvar = form => {
     setTarefas(ts=>form.id?ts.map(t=>t.id===form.id?form:t):[...ts,{...form,id:Date.now(),arquivada:false}]);
-    setEditando(null); setNovo(false);
   };
   const mudarStatus = (id, status) => {
     setTarefas(ts=>ts.map(t=>t.id===id?{...t,status}:t));
@@ -6443,7 +6508,7 @@ function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, 
           ))}
         </div>
       )}
-      {(editando||novo)&&<ModalFormTarefa tarefa={editando} processos={processos} clientes={clientes} equipe={equipe||[]} onSave={salvar} onClose={()=>{setEditando(null);setNovo(false);}}/>}
+      {(editando||novo)&&<ModalFormTarefa tarefa={editando} processos={processos} clientes={clientes} equipe={equipe||[]} onSave={salvar} onClose={()=>{setEditando(null);setNovo(false);}} onAbrirProcesso={onAbrirProcesso}/>}
       {executandoTarefa&&<ModalExecutarTarefaIA
         tarefa={executandoTarefa}
         processo={executandoTarefa.procId ? processos.find(p=>String(p.id)===String(executandoTarefa.procId)) : null}
