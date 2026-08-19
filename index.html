@@ -2911,15 +2911,24 @@ function PaginaDashboard({processos, parcelas, clientes, tarefas, setTarefas, ag
       <div style={{display:"flex",flexDirection:"column",gap:0,flex:1}}>
         {itens.length===0 ? (
           <p style={{fontSize:12,color:"var(--text3)"}}>{vazio}</p>
-        ) : itens.slice(0,3).map((el,i)=>(
-          <div key={i} onClick={el.onClick} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"8px 0",borderTop:"1px solid var(--border1)",cursor:el.onClick?"pointer":"default"}}>
-            <div style={{minWidth:0}}>
+        ) : itens.slice(0,3).map((el,i)=>{
+          let dataObj = null;
+          if(el.data){ const [ano,mes,dia] = el.data.split("-").map(Number); dataObj = {dia:String(dia).padStart(2,"0"), mes:MES_ABREV[mes-1]}; }
+          return (
+          <div key={i} onClick={el.onClick} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:"1px solid var(--border1)",cursor:el.onClick?"pointer":"default"}}>
+            {dataObj && (
+              <div style={{width:28,flexShrink:0,textAlign:"center"}}>
+                <div style={{fontSize:14,fontWeight:800,lineHeight:1,color:corIcone}}>{dataObj.dia}</div>
+                <div style={{fontSize:7.5,textTransform:"uppercase",letterSpacing:".4px",color:"var(--text3)",marginTop:2,fontWeight:700}}>{dataObj.mes}</div>
+              </div>
+            )}
+            <div style={{minWidth:0,flex:1}}>
               <p style={{fontSize:12,fontWeight:600,margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{el.titulo}</p>
               <p style={{fontSize:10.5,color:"var(--text2)",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{el.sub}</p>
             </div>
-            {el.tag && <span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:20,background:el.tag.bg,color:el.tag.color,whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:".3px"}}>{el.tag.label}</span>}
+            {el.tag && <span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:20,background:el.tag.bg,color:el.tag.color,whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:".3px",flexShrink:0}}>{el.tag.label}</span>}
           </div>
-        ))}
+        );})}
       </div>
       {onVerTodos && <div onClick={onVerTodos} style={{marginTop:10,paddingTop:10,borderTop:itens.length===0?"none":"1px solid var(--border1)",fontSize:11.5,fontWeight:600,color:"var(--accent)",cursor:"pointer"}}>{verTodosLabel} →</div>}
     </div>
@@ -2957,14 +2966,14 @@ function PaginaDashboard({processos, parcelas, clientes, tarefas, setTarefas, ag
         <AlertCard
           titulo="Prazos vencidos e tarefas pendentes" corIcone="var(--red)" corBg="var(--red-bg)" icone="⚠"
           numero={vencidosETarefasPendentes.length} sub="requer atenção imediata"
-          itens={vencidosETarefasPendentes.map(t=>({titulo:t.titulo, sub:clienteDeTarefa(t)||"—", tag:tagPorUrgenciaOuPendente(t), onClick:()=>abrirTarefaDashboard(t)}))}
+          itens={vencidosETarefasPendentes.map(t=>({titulo:t.titulo, sub:clienteDeTarefa(t)||"—", data:t.prazo, tag:tagPorUrgenciaOuPendente(t), onClick:()=>abrirTarefaDashboard(t)}))}
           vazio="Nenhum prazo vencido ou tarefa pendente. 🎉"
           verTodosLabel="Ver todos" onVerTodos={()=>onIrPara("tarefas")}
         />
         <AlertCard
           titulo="Prazos próximos" corIcone="var(--amber)" corBg="var(--amber-bg)" icone="⏱"
           numero={prazosProximos7d.length} sub={`${prazosVencendoHoje} vencem hoje · ${prazosUrgentes3d} urgentes`}
-          itens={prazosProximos7d.map(t=>({titulo:t.titulo, sub:clienteDeTarefa(t)||"—", tag:tagPorUrgencia(t), onClick:()=>abrirTarefaDashboard(t)}))}
+          itens={prazosProximos7d.map(t=>({titulo:t.titulo, sub:clienteDeTarefa(t)||"—", data:t.prazo, tag:tagPorUrgencia(t), onClick:()=>abrirTarefaDashboard(t)}))}
           vazio="Nenhum prazo nos próximos 7 dias."
           verTodosLabel="Ver todos" onVerTodos={()=>onIrPara("tarefas")}
         />
@@ -5658,7 +5667,7 @@ async function gerarProcuracaoParaCliente(cliente, finalidadeEspecifica){
 // honorários, forma de pagamento) informadas na hora.
 async function gerarContratoParaCliente(cliente, dadosContrato){
   const qualificacao = montarQualificacaoCliente(cliente);
-  const { itensObjeto, valorTotal, adiantamento, parcelamento, percentualExito, baseCalculoExito, foro } = dadosContrato;
+  const { itensObjeto, valorTotal, adiantamento, parcelamento, dataVencimento, percentualExito, baseCalculoExito, foro } = dadosContrato;
   const temFixo = valorTotal && valorTotal.trim();
   const temExito = percentualExito && percentualExito.trim();
   const foroFinal = (foro && foro.trim()) || "Itaboraí/RJ";
@@ -5680,7 +5689,7 @@ async function gerarContratoParaCliente(cliente, dadosContrato){
   if(temFixo){
     linhas.push(`3.1 - Pelos serviços ora contratados, o CONTRATANTE pagará à CONTRATADA o valor total de ${valorTotal.trim()}, da seguinte forma:`);
     if(adiantamento && adiantamento.trim()) linhas.push(`#PEDIDO#${adiantamento.trim()}, pagos a título de adiantamento;`);
-    linhas.push(`#PEDIDO#o saldo remanescente será pago ${parcelamento && parcelamento.trim() ? parcelamento.trim() : "conforme acordado entre as partes"};`);
+    linhas.push(`#PEDIDO#o saldo remanescente será pago ${parcelamento && parcelamento.trim() ? parcelamento.trim() : "conforme acordado entre as partes"}${dataVencimento && dataVencimento.trim() ? `, com vencimento da primeira parcela em ${fmtData(dataVencimento.trim())}` : ""};`);
     if(temExito) linhas.push(`#PEDIDO#além dos honorários contratuais ajustados, o CONTRATANTE pagará à CONTRATADA honorários de êxito equivalentes a ${percentualExito.trim()} sobre o benefício econômico obtido na demanda, devidos no momento em que houver obtenção de resultado favorável definitivo, ainda que parcial, inclusive em caso de acordo ou solução administrativa.`);
   } else {
     // Sem honorário fixo — a remuneração da CONTRATADA fica condicionada
@@ -5735,6 +5744,7 @@ function ModalGerarContrato({cliente, onClose}){
   const [valorTotal, setValorTotal] = useState("");
   const [adiantamento, setAdiantamento] = useState("");
   const [parcelamento, setParcelamento] = useState("");
+  const [dataVencimento, setDataVencimento] = useState("");
   const [percentualExito, setPercentualExito] = useState("");
   const [baseCalculoExito, setBaseCalculoExito] = useState("");
   const [foro, setForo] = useState("Itaboraí/RJ");
@@ -5755,7 +5765,8 @@ function ModalGerarContrato({cliente, onClose}){
     try {
       await gerarContratoParaCliente(cliente, {
         itensObjeto, valorTotal: valorTotal.trim(), adiantamento: adiantamento.trim(),
-        parcelamento: parcelamento.trim(), percentualExito: percentualExito.trim(),
+        parcelamento: parcelamento.trim(), dataVencimento: dataVencimento.trim(),
+        percentualExito: percentualExito.trim(),
         baseCalculoExito: baseCalculoExito.trim(), foro: foro.trim(),
       });
       onClose();
@@ -5778,7 +5789,8 @@ function ModalGerarContrato({cliente, onClose}){
           <div><span style={lbl}>Valor total dos honorários fixos <span style={{fontWeight:400,textTransform:"none"}}>(opcional — deixe em branco se for só êxito)</span></span><input value={valorTotal} onChange={e=>setValorTotal(e.target.value)} style={inp} placeholder="Ex: R$ 9.000,00 (nove mil reais)"/></div>
           {valorTotal.trim() && <>
             <div><span style={lbl}>Adiantamento já pago <span style={{fontWeight:400,textTransform:"none"}}>(opcional)</span></span><input value={adiantamento} onChange={e=>setAdiantamento(e.target.value)} style={inp} placeholder="Ex: R$ 1.000,00 (mil reais)"/></div>
-            <div><span style={lbl}>Forma de pagamento do saldo</span><textarea value={parcelamento} onChange={e=>setParcelamento(e.target.value)} style={{...inp,minHeight:50,resize:"vertical"}} placeholder="Ex: em 3 (três) parcelas mensais, iguais e sucessivas, com vencimento todo dia 17 de cada mês"/></div>
+            <div><span style={lbl}>Forma de pagamento do saldo</span><textarea value={parcelamento} onChange={e=>setParcelamento(e.target.value)} style={{...inp,minHeight:50,resize:"vertical"}} placeholder="Ex: em 3 (três) parcelas mensais, iguais e sucessivas"/></div>
+            <div><span style={lbl}>Data de vencimento <span style={{fontWeight:400,textTransform:"none"}}>(opcional — da 1ª parcela, se parcelado)</span></span><input type="date" value={dataVencimento} onChange={e=>setDataVencimento(e.target.value)} style={inp}/></div>
           </>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div><span style={lbl}>Percentual de êxito <span style={{fontWeight:400,textTransform:"none"}}>(opcional)</span></span><input value={percentualExito} onChange={e=>setPercentualExito(e.target.value)} style={inp} placeholder="Ex: 20% (vinte por cento)"/></div>
