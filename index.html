@@ -3967,7 +3967,7 @@ function PaginaProcessos({processos,setProcessos,clientes,setClientes,mapas,setM
       </div>
       <p style={{fontSize:11,color:"var(--text2)",marginTop:8,textAlign:"right"}}>{lista.length} registro(s)</p>
       {acaoLote&&<ModalAcaoLote tipo={acaoLote} qtd={selecionados.size} clientes={clientes} classificacoes={[...CLASSIFICACOES_VALIDAS,...(classificacoesCustom||[])]} onAplicar={aplicarLote} onClose={()=>setAcaoLote(null)}/>}
-      {selected&&!editando&&<ModalDetalhe p={selected} cliente={clienteDe(selected)} clientes={clientes} processos={processos} onClose={()=>setSelected(null)} onEdit={p=>{setEditando(p);setSelected(null);}} onChecklistUpdate={updateChecklist} onSavePrazo={abrirAnalisePrazo} onSaveDebito={saveDebito} onCumprirPrazo={cumprirPrazo} onToggleArquivado={toggleArquivado} onAddAndamento={addAndamento} onSaveAssunto={saveAssunto} onAddTarefaProcesso={addTarefaProcesso} onSaveDriveLink={saveDriveLink} tarefasDoProcesso={(tarefas||[]).filter(t=>t.procId===selected.id)} onConcluirTarefaProc={concluirTarefaProc} onArquivarTarefaProc={arquivarTarefaProc} onSaveVinculo={saveVinculo} onRemoverVinculo={removerVinculo} onAbrirOutroProcesso={proc=>setSelected(proc)} onRegistrarExito={registrarExito} onSaveAudiencia={saveAudiencia} onSaveCampo={(id,campo,valor)=>setProcessos(ps=>ps.map(x=>x.id===id?registrarHistorico({...x,[campo]:valor}, `Campo "${campo}" alterado para "${valor}"`, usuarioAtual):x))} onSalvarPrazoProcesso={salvarPrazoDoProcesso} onSalvarPartes={salvarPartes} onSalvarResumo={salvarResumoExecutivo} onEditarAndamento={editarAndamento} onExcluirAndamento={excluirAndamento}/>}
+      {selected&&!editando&&<ModalDetalhe p={selected} cliente={clienteDe(selected)} clientes={clientes} processos={processos} onClose={()=>setSelected(null)} onEdit={p=>{setEditando(p);setSelected(null);}} onChecklistUpdate={updateChecklist} onSavePrazo={abrirAnalisePrazo} onSaveDebito={saveDebito} onCumprirPrazo={cumprirPrazo} onToggleArquivado={toggleArquivado} onAddAndamento={addAndamento} onSaveAssunto={saveAssunto} onAddTarefaProcesso={addTarefaProcesso} onSaveDriveLink={saveDriveLink} tarefasDoProcesso={(tarefas||[]).filter(t=>t.procId===selected.id)} onConcluirTarefaProc={concluirTarefaProc} onArquivarTarefaProc={arquivarTarefaProc} onSaveVinculo={saveVinculo} onRemoverVinculo={removerVinculo} onAbrirOutroProcesso={proc=>setSelected(proc)} onRegistrarExito={registrarExito} onSaveAudiencia={saveAudiencia} onSaveCampo={(id,campo,valor)=>{setProcessos(ps=>ps.map(x=>x.id===id?registrarHistorico({...x,[campo]:valor}, `Campo "${campo}" alterado para "${valor}"`, usuarioAtual):x)); setSelected(s=>s&&s.id===id?{...s,[campo]:valor}:s);}} onSalvarPrazoProcesso={salvarPrazoDoProcesso} onSalvarPartes={salvarPartes} onSalvarResumo={salvarResumoExecutivo} onEditarAndamento={editarAndamento} onExcluirAndamento={excluirAndamento}/>}
       {(editando||novo)&&<ModalFormProc processo={editando} clientes={clientes} onSave={salvar} onClose={()=>{setEditando(null);setNovo(false);}} onNovoCliente={onNovoCliente} classificacoesCustom={classificacoesCustom||[]} onNovaClassificacao={nova=>{ if(setClassificacoesCustom) setClassificacoesCustom(cs=>cs.includes(nova)?cs:[...cs,nova]); }}/>}
       {mapaProc&&<ModalMapa proc={mapaProc} mapaData={mapas[mapaProc.id]||defaultMap()} onChange={data=>setMapas(m=>({...m,[mapaProc.id]:data}))} onClose={()=>setMapaProc(null)}/>}
       {analisandoPrazo&&<ModalConfirmarPrazo proc={analisandoPrazo} sugestao={sugestaoPrazo} dataAndamento={[...(analisandoPrazo.andamentos||[])].sort((a,b)=>b.data.localeCompare(a.data))[0]?.data||""} onConfirm={salvarPrazo} onClose={()=>{setAnalisandoPrazo(null);setSugestaoPrazo(null);}}/>}
@@ -6539,13 +6539,6 @@ function ModalFormCompromisso({compromisso, processos, clientes, equipe, onSave,
   const e0 = {titulo:"",tipo:"reuniao",dataHora:"",procId:"",clienteId:"",responsavelId:"",local:"",confirmado:true,obs:""};
   const [f,setF] = useState(compromisso||e0);
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
-  // Nome do cliente vinculado: direto pelo clienteId, ou (mais comum) através do
-  // processo selecionado — mostrado como linha somente-leitura, não editável aqui.
-  const clienteVinculado = (()=>{
-    if(f.clienteId){ const c=(clientes||[]).find(x=>String(x.id)===String(f.clienteId)); if(c) return c.nome; }
-    if(f.procId){ const proc=(processos||[]).find(p=>String(p.id)===String(f.procId)); if(proc?.clienteId){ const c=(clientes||[]).find(x=>x.id===proc.clienteId); if(c) return c.nome; } }
-    return null;
-  })();
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.45)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
       <div style={{background:"#fff",width:460,maxWidth:"100%",maxHeight:"90vh",overflow:"auto",borderRadius:10,padding:"1.75rem",boxShadow:"0 25px 60px rgba(0,0,0,.3)"}}>
@@ -6566,25 +6559,28 @@ function ModalFormCompromisso({compromisso, processos, clientes, equipe, onSave,
               <select value={f.procId||""} onChange={e=>{
                 const procId = e.target.value;
                 const proc = processos.find(p=>String(p.id)===procId);
-                setF(x=>({...x, procId, clienteId: proc?.clienteId || x.clienteId}));
+                // Ao escolher um processo, preenche o cliente automaticamente, mas
+                // só se o campo de cliente ainda não tiver sido escolhido à mão —
+                // não sobrescreve uma escolha manual que a pessoa já tenha feito.
+                setF(x=>({...x, procId, clienteId: x.clienteId || proc?.clienteId || ""}));
               }} style={{...inp,padding:"7px 8px"}}>
                 <option value="">—</option>
                 {processos.map(p=><option key={p.id} value={p.id}>{p.numero}</option>)}
               </select>
             </div>
-            <div><span style={lbl}>Responsável <span style={{color:"var(--text3)",fontWeight:400,textTransform:"none"}}>(opcional)</span></span>
-              <select value={f.responsavelId||""} onChange={e=>s("responsavelId",e.target.value)} style={{...inp,padding:"7px 8px"}}>
+            <div><span style={lbl}>Cliente <span style={{color:"var(--text3)",fontWeight:400,textTransform:"none"}}>(opcional)</span></span>
+              <select value={f.clienteId||""} onChange={e=>s("clienteId",e.target.value?parseInt(e.target.value):"")} style={{...inp,padding:"7px 8px"}}>
                 <option value="">—</option>
-                {(equipe||[]).map(m=><option key={m.id} value={m.id}>{m.nome}</option>)}
+                {(clientes||[]).map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </div>
           </div>
-          {clienteVinculado && (
-            <div style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,color:"var(--navy2)",background:"var(--bg2)",borderRadius:6,padding:"8px 12px"}}>
-              <Icon name="user" size={13} color="var(--accent)"/>
-              <span>Cliente vinculado: <strong>{clienteVinculado}</strong></span>
-            </div>
-          )}
+          <div><span style={lbl}>Responsável <span style={{color:"var(--text3)",fontWeight:400,textTransform:"none"}}>(opcional)</span></span>
+            <select value={f.responsavelId||""} onChange={e=>s("responsavelId",e.target.value)} style={{...inp,padding:"7px 8px"}}>
+              <option value="">—</option>
+              {(equipe||[]).map(m=><option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          </div>
           <div><span style={lbl}>Observações <span style={{color:"var(--text3)",fontWeight:400,textTransform:"none"}}>(opcional)</span></span><textarea value={f.obs||""} onChange={e=>s("obs",e.target.value)} style={{...inp,minHeight:60,resize:"vertical"}}/></div>
         </div>
         <div style={{marginTop:20,display:"flex",gap:8,justifyContent:"flex-end"}}>
