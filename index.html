@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Michelli Abreu Advocacia — Sistema de Gestão</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#1A1815">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Michelli Abreu">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -65,6 +72,29 @@ h1,h2,h3{font-family:'Inter',sans-serif;letter-spacing:-.02em;}
 ::-webkit-scrollbar-thumb{background:var(--border3);border-radius:4px}
 button{font-family:inherit}
 input,select,textarea{font-family:inherit}
+
+/* Responsivo: em telas estreitas (celular), o menu lateral vira uma gaveta
+   que fica escondida por padrão e abre por cima do conteúdo, em vez de
+   ocupar a tela inteira ao lado do conteúdo. */
+.topbar-mobile{display:none}
+.sidebar-backdrop{display:none}
+@media (max-width: 880px){
+  .sidebar{
+    position:fixed !important; left:0; top:0; bottom:0; z-index:401;
+    transform:translateX(-101%); transition:transform .22s ease;
+    box-shadow:6px 0 28px rgba(0,0,0,.28);
+  }
+  .sidebar.sidebar-aberta{ transform:translateX(0); }
+  .topbar-mobile{
+    display:flex !important; align-items:center; gap:12px;
+    padding:12px 16px; background:var(--navy); color:#fff;
+    position:sticky; top:0; z-index:200; flex-shrink:0;
+  }
+  .sidebar-backdrop.aberta{
+    display:block; position:fixed; inset:0; background:rgba(15,13,11,.45); z-index:400;
+  }
+  .conteudo-principal{ padding:16px !important; }
+}
 </style>
 </head>
 <body>
@@ -527,6 +557,137 @@ function ModalExito({proc, cliente, onSave, onClose, onGerarCobranca}){
             const registro = { data: hoje.toISOString().slice(0,10), valorBaixado: valorDebito, percentual: parseFloat(percentual)||0, valorHonorarios, observacao };
             onSave(registro);
           }} style={btnPri}>Registrar êxito</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalExtincao({proc, onSave, onClose}){
+  const [valor,setValor] = useState(proc.debito?.valor || "");
+  const [motivo,setMotivo] = useState("Prescrição");
+  const [observacao,setObservacao] = useState("");
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:520,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:"#fff",width:460,maxWidth:"100%",borderRadius:8,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.2)"}}>
+        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 4px",fontWeight:700}}>⚖ Registrar extinção — sem recuperação</p>
+        <p style={{fontSize:13,fontWeight:600,margin:"0 0 16px",fontFamily:"monospace"}}>{proc.numero}</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><span style={lbl}>Valor extinto (R$)</span><input type="number" step="0.01" value={valor} onChange={e=>setValor(e.target.value)} style={inp} placeholder="0,00"/></div>
+          <div><span style={lbl}>Motivo</span>
+            <select value={motivo} onChange={e=>setMotivo(e.target.value)} style={{...inp,padding:"7px 8px"}}>
+              {["Prescrição","Decadência","Quitação sem honorários de êxito","Acordo com desconto integral","Insolvência do devedor","Outro"].map(m=><option key={m}>{m}</option>)}
+            </select>
+          </div>
+          <div><span style={lbl}>Observações (opcional)</span><textarea value={observacao} onChange={e=>setObservacao(e.target.value)} style={{...inp,minHeight:60,resize:"vertical"}} placeholder="Ex: Sentença de extinção transitada em julgado em..."/></div>
+        </div>
+        <div style={{marginTop:18,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={btnSec}>Cancelar</button>
+          <button onClick={()=>{
+            const registro = { data: hoje.toISOString().slice(0,10), valor: parseFloat(valor)||0, motivo, observacao };
+            onSave(registro);
+          }} style={btnPri}>Registrar extinção</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Relatório de acompanhamento processual para envio ao cliente. Não inclui a
+// lista bruta de andamentos/movimentações — usa apenas o resumo executivo
+// (estratégia/situação atual) já mantido em cada processo, mais os
+// resultados financeiros (êxito/extinção) para calcular a taxa de recuperação
+// da carteira.
+const LABEL_STATUS_PROCESSO = {
+  ativo:"Em andamento", em_andamento:"Em andamento", aguardando:"Aguardando manifestação/decisão",
+  encerrado:"Encerrado", arquivado:"Arquivado", suspenso:"Suspenso",
+};
+async function gerarRelatorioClienteParaEnvio(cliente, processosSelecionados){
+  const dataHoje = fmtData(hoje.toISOString().slice(0,10));
+
+  let totalRecuperado = 0, totalExtinto = 0;
+  const linhasProcessos = [];
+
+  processosSelecionados.forEach(p=>{
+    const exitosDoProc = p.exitos||[];
+    const extincoesDoProc = p.extincoes||[];
+    exitosDoProc.forEach(e=>totalRecuperado += (e.valorBaixado||0));
+    extincoesDoProc.forEach(e=>totalExtinto += (e.valor||0));
+
+    linhasProcessos.push(`#SECAO#Processo nº ${p.numero}`);
+    linhasProcessos.push(`${p.vara||"Vara não informada"} — Situação atual: ${LABEL_STATUS_PROCESSO[p.status]||p.status||"em acompanhamento"}`);
+
+    const resumo = p.resumoExecutivo;
+    if(resumo?.resumoCaso) linhasProcessos.push(`Resumo do caso: ${resumo.resumoCaso}`);
+    linhasProcessos.push(`Estratégia/situação atual: ${resumo?.situacaoAtual || "Em análise e acompanhamento pela equipe jurídica, sem novidades relevantes a reportar no momento."}`);
+
+    if(p.debito?.valor>0) linhasProcessos.push(`Valor em cobrança atualizado: ${fmtBRL(p.debito.valor)} (atualizado em ${fmtData(p.debito.dataAtualizacao||p.debito.dataBase)}).`);
+    exitosDoProc.forEach(e=>linhasProcessos.push(`Resultado obtido: valor recuperado de ${fmtBRL(e.valorBaixado)} em ${fmtData(e.data)}.${e.observacao?" "+e.observacao:""}`));
+    extincoesDoProc.forEach(e=>linhasProcessos.push(`Resultado obtido: processo extinto sem recuperação — motivo: ${e.motivo} — valor envolvido de ${fmtBRL(e.valor)}, em ${fmtData(e.data)}.${e.observacao?" "+e.observacao:""}`));
+  });
+
+  const baseCalculo = totalRecuperado + totalExtinto;
+  const taxaRecuperacao = baseCalculo>0 ? (totalRecuperado/baseCalculo*100) : null;
+
+  const linhas = [
+    "#TITULO#Relatório de Acompanhamento Processual",
+    `Cliente: ${cliente.nome}`,
+    `Data do relatório: ${dataHoje}`,
+    `Total de processos neste relatório: ${processosSelecionados.length}`,
+  ];
+
+  if(baseCalculo>0){
+    linhas.push("#SECAO#Resumo da Carteira");
+    linhas.push(`Valor total recuperado: ${fmtBRL(totalRecuperado)}`);
+    linhas.push(`Valor total extinto sem recuperação: ${fmtBRL(totalExtinto)}`);
+    linhas.push(`Taxa de recuperação: ${taxaRecuperacao.toFixed(1)}%`);
+  }
+
+  linhas.push(...linhasProcessos);
+  linhas.push("Permanecemos à disposição para esclarecimentos adicionais.");
+  linhas.push("#CENTRO#" + dataHoje);
+  linhas.push("#ASSINATURA_CENTRO#MICHELLI COSTA DE ABREU");
+  linhas.push("#ASSINATURA_CENTRO#OAB/RJ 155.134");
+
+  await gerarDocumentoTimbrado("Relatorio_"+nomeArquivoSeguro(cliente.nome), linhas.join("\n"));
+}
+
+function ModalGerarRelatorio({cliente, processosDoCliente, onClose}){
+  const [selecionados,setSelecionados] = useState(()=>Object.fromEntries(processosDoCliente.map(p=>[p.id,true])));
+  const [gerando,setGerando] = useState(false);
+  const [erro,setErro] = useState("");
+  const toggle = id => setSelecionados(s=>({...s,[id]:!s[id]}));
+  const gerar = async () => {
+    const escolhidos = processosDoCliente.filter(p=>selecionados[p.id]);
+    if(escolhidos.length===0){ setErro("Selecione ao menos um processo."); return; }
+    setErro(""); setGerando(true);
+    try { await gerarRelatorioClienteParaEnvio(cliente, escolhidos); onClose(); }
+    catch(e){ setErro(e.message || "Não foi possível gerar o relatório."); }
+    setGerando(false);
+  };
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:"#fff",width:480,maxWidth:"100%",maxHeight:"85vh",overflow:"auto",borderRadius:10,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
+        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 4px",fontWeight:600}}>Relatório de acompanhamento</p>
+        <p style={{fontSize:15,fontWeight:700,margin:"0 0 14px",color:"var(--navy)"}}>{cliente.nome}</p>
+        <p style={{fontSize:11.5,color:"var(--text2)",margin:"0 0 14px",lineHeight:1.5}}>
+          Escolha quais processos entram no relatório. Ele traz a estratégia/situação atual de cada um e, se houver, os valores recuperados ou extintos — não inclui a lista de andamentos.
+        </p>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16,maxHeight:280,overflow:"auto"}}>
+          {processosDoCliente.map(p=>(
+            <label key={p.id} style={{display:"flex",gap:10,alignItems:"flex-start",background:"var(--bg2)",borderRadius:6,padding:"9px 11px",cursor:"pointer"}}>
+              <input type="checkbox" checked={!!selecionados[p.id]} onChange={()=>toggle(p.id)} style={{width:15,height:15,marginTop:2,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <p style={{fontSize:12,fontWeight:600,margin:"0 0 2px"}}>{p.numero}</p>
+                <p style={{fontSize:11,color:"var(--text2)",margin:0}}>{LABEL_STATUS_PROCESSO[p.status]||p.status||"—"}{p.debito?.valor>0?` · ${fmtBRL(p.debito.valor)} em cobrança`:""}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+        {erro && <p style={{fontSize:12,color:"var(--red)",margin:"0 0 12px"}}>{erro}</p>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={btnSec}>Cancelar</button>
+          <button onClick={gerar} disabled={gerando} style={btnPri}>{gerando?"Gerando…":"📊 Gerar relatório"}</button>
         </div>
       </div>
     </div>
@@ -1113,7 +1274,7 @@ function SugestoesCnjCard({p, onSaveCampo}){
   );
 }
 
-function ModalDetalhe({p,cliente,clientes,processos,onClose,onEdit,onChecklistUpdate,onSavePrazo,onSaveDebito,onCumprirPrazo,onToggleArquivado,onAddAndamento,onSaveAssunto,onAddTarefaProcesso,onSaveDriveLink,tarefasDoProcesso,onConcluirTarefaProc,onArquivarTarefaProc,onSaveVinculo,onRemoverVinculo,onAbrirOutroProcesso,onRegistrarExito,onSaveAudiencia,onExcluir,onSaveCampo,onSalvarPrazoProcesso,onSalvarPartes,onSalvarResumo,onEditarAndamento,onExcluirAndamento}){
+function ModalDetalhe({p,cliente,clientes,processos,onClose,onEdit,onChecklistUpdate,onSavePrazo,onSaveDebito,onCumprirPrazo,onToggleArquivado,onAddAndamento,onSaveAssunto,onAddTarefaProcesso,onSaveDriveLink,tarefasDoProcesso,onConcluirTarefaProc,onArquivarTarefaProc,onSaveVinculo,onRemoverVinculo,onAbrirOutroProcesso,onRegistrarExito,onRegistrarExtincao,onSaveAudiencia,onExcluir,onSaveCampo,onSalvarPrazoProcesso,onSalvarPartes,onSalvarResumo,onEditarAndamento,onExcluirAndamento}){
   const [tab,setTab]=useState("andamentos");
   const [editandoDebito,setEditandoDebito]=useState(false);
   const [novoAndDesc,setNovoAndDesc]=useState("");
@@ -1130,6 +1291,7 @@ function ModalDetalhe({p,cliente,clientes,processos,onClose,onEdit,onChecklistUp
   const [vinculoTipo,setVinculoTipo]=useState(p.vinculo?.tipo||"Apensado a");
   const [vinculoProcId,setVinculoProcId]=useState(p.vinculo?.procId||"");
   const [registrandoExito,setRegistrandoExito]=useState(false);
+  const [registrandoExtincao,setRegistrandoExtincao]=useState(false);
   const [enviandoCobranca,setEnviandoCobranca]=useState(null);
   const [editandoAudiencia,setEditandoAudiencia]=useState(false);
   const [editandoPrazo,setEditandoPrazo]=useState(false);
@@ -1280,6 +1442,7 @@ function ModalDetalhe({p,cliente,clientes,processos,onClose,onEdit,onChecklistUp
             <div style={{display:"flex",gap:6}}>
               <button onClick={()=>setEditandoDebito(true)} style={{...btnSec,fontSize:10.5,padding:"4px 11px"}}>{p.debito?.valor?"✎ Atualizar valor":"+ Lançar valor"}</button>
               {p.debito?.valor>0&&<button onClick={()=>setRegistrandoExito(true)} style={{...btnSec,fontSize:10.5,padding:"4px 11px",borderColor:"#A8DDB8",color:"var(--green)",background:"var(--green-bg)",display:"inline-flex",alignItems:"center",gap:5}}><Icon name="checkCircle" size={12} color="var(--green)"/>Débito baixado</button>}
+              {p.debito?.valor>0&&<button onClick={()=>setRegistrandoExtincao(true)} style={{...btnSec,fontSize:10.5,padding:"4px 11px"}}>⚖ Extinção sem recuperação</button>}
             </div>
           </div>
           <DebitoBadge debito={p.debito} compact={false}/>
@@ -1493,6 +1656,7 @@ function ModalDetalhe({p,cliente,clientes,processos,onClose,onEdit,onChecklistUp
       </div>
       {editandoDebito&&<ModalDebito proc={p} cliente={cliente} onSave={(info,parcelasGeradas)=>{onSaveDebito(p.id,info,parcelasGeradas);setEditandoDebito(false);}} onClose={()=>setEditandoDebito(false)}/>}
       {registrandoExito&&<ModalExito proc={p} cliente={cliente} onSave={registro=>{onRegistrarExito(p.id,registro);setRegistrandoExito(false);}} onClose={()=>setRegistrandoExito(false)}/>}
+      {registrandoExtincao&&<ModalExtincao proc={p} onSave={registro=>{onRegistrarExtincao(p.id,registro);setRegistrandoExtincao(false);}} onClose={()=>setRegistrandoExtincao(false)}/>}
       {enviandoCobranca&&<ModalEnviarCobranca proc={p} cliente={cliente} exito={enviandoCobranca} onClose={()=>setEnviandoCobranca(null)}/>}
     </div>
   );
@@ -1570,6 +1734,169 @@ function resolverClientesDasPartes(partes, clientesAtuais, setClientes){
 // Faz a triagem de um caso novo: cria o cliente e o processo (mesmo sem número),
 // já com tarefas iniciais, lê documentos anexados para preencher o cadastro via IA,
 // e gera a procuração pronta no timbrado.
+// ── Triagem de Caso Novo: analisa transcrição de reunião + documentos e
+// devolve classificação, viabilidade, checklist de documentos e um resumo
+// pronto para virar o Resumo Executivo do processo. Não cria nada sozinha —
+// só depois de revisar, a advogada decide se abre a Ficha de Atendimento
+// (já pré-preenchida) para criar cliente/processo de fato.
+function ModalTriagemCaso({onClose, onUsarParaFicha}){
+  const [transcricao, setTranscricao] = useState("");
+  const [textoDocumentos, setTextoDocumentos] = useState("");
+  const [lendoArquivo, setLendoArquivo] = useState(false);
+  const [analisando, setAnalisando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [resultado, setResultado] = useState(null);
+
+  const lerArquivo = async (e) => {
+    const arquivo = e.target.files?.[0];
+    if(!arquivo) return;
+    setErro("");
+    const ehPdf = arquivo.type === "application/pdf" || arquivo.name.toLowerCase().endsWith(".pdf");
+    const ehTexto = arquivo.type.startsWith("text/") || arquivo.name.toLowerCase().endsWith(".txt");
+    if(ehPdf){
+      setLendoArquivo(true);
+      try {
+        const texto = await extrairTextoPDF(arquivo);
+        if(!texto) setErro("Não foi possível extrair texto deste PDF — provavelmente é um documento escaneado (imagem). Cole o conteúdo manualmente se tiver outra fonte.");
+        else setTextoDocumentos(t => t ? t+"\n\n--- novo documento ---\n"+texto : texto);
+      } catch(err){
+        setErro("Erro ao ler o PDF: " + (err.message||"arquivo pode estar corrompido."));
+      }
+      setLendoArquivo(false);
+      return;
+    }
+    if(!ehTexto){ setErro("Só .pdf ou .txt são lidos automaticamente. Para Word, copie e cole o conteúdo no campo abaixo."); return; }
+    const reader = new FileReader();
+    reader.onload = () => setTextoDocumentos(t => t ? t+"\n\n--- novo documento ---\n"+reader.result : String(reader.result));
+    reader.readAsText(arquivo);
+  };
+
+  const analisarComIA = async () => {
+    setErro(""); setAnalisando(true); setResultado(null);
+    try {
+      const contexto = [
+        transcricao ? `=== TRANSCRIÇÃO DA REUNIÃO ===\n${transcricao}\n=== FIM DA TRANSCRIÇÃO ===` : "",
+        textoDocumentos ? `\n=== TEXTO DOS DOCUMENTOS ANEXADOS ===\n${textoDocumentos}\n=== FIM DOS DOCUMENTOS ===` : "",
+      ].filter(Boolean).join("\n");
+      if(!contexto.trim()) throw new Error("Cole a transcrição da reunião ou anexe ao menos um documento.");
+
+      let res;
+      try {
+        res = await fetch(IA_PROXY_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SUPABASE_KEY },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 2200,
+            system: `Você ajuda uma advogada brasileira a fazer a TRIAGEM de um caso novo, a partir da transcrição de uma reunião com o cliente (e, se houver, documentos anexados). Isto é uma etapa de análise interna, ANTES de decidir se o escritório vai aceitar o caso — não é uma peça processual.
+
+Retorne SOMENTE um JSON válido, sem markdown, neste formato exato:
+{
+  "nomeCliente": "...",
+  "classificacao": {"areaDireito": "...", "tipoAcaoSugerido": "..."},
+  "viabilidade": {"pontosFavoraveis": ["..."], "riscos": ["..."], "observacaoGeral": "..."},
+  "checklistDocumentos": ["..."],
+  "resumoCaso": "...",
+  "situacaoAtual": "..."
+}
+
+Regras:
+- "nomeCliente": nome da pessoa que relata o caso na reunião, se identificável; senão "".
+- "classificacao.areaDireito": a área do direito mais provável (ex: "Família e Sucessões", "Trabalhista", "Execução Fiscal", "Consumidor" etc.).
+- "classificacao.tipoAcaoSugerido": o tipo de ação/medida mais provável (ex: "Ação de Inventário", "Execução de Título Extrajudicial", "Ação de Guarda").
+- "viabilidade.pontosFavoraveis" e "riscos": arrays de frases curtas e objetivas, baseadas SOMENTE no que foi relatado — nunca invente fatos, provas ou prazos que não estejam no contexto. Se não houver base suficiente para avaliar viabilidade, diga isso em "observacaoGeral" em vez de forçar uma conclusão.
+- "checklistDocumentos": lista dos documentos que tipicamente seriam necessários para esse tipo de caso (ex: RG, CPF, certidões, comprovantes) — pode incluir itens genéricos de praxe mesmo que não mencionados na reunião, mas identifique-os como sugestão de praxe se assim for.
+- "resumoCaso": 2 a 4 frases narrando os fatos relevantes relatados na reunião.
+- "situacaoAtual": 1 a 2 frases sobre o próximo passo esperado (ex: "Aguardando documentação do cliente para viabilizar o ajuizamento.").
+- Use string vazia "" ou array vazio [] onde não houver informação suficiente — nunca preencha com suposições.`,
+            messages: [{role:"user", content: contexto}]
+          })
+        });
+      } catch(e) { throw new Error("Não foi possível conectar ao serviço de IA — verifique sua conexão."); }
+      if(!res.ok){
+        let detalhe = ""; try { const b = await res.json(); detalhe = b?.error?.message||""; } catch(_){}
+        throw new Error(`Erro HTTP ${res.status} ao chamar a IA.${detalhe?` ${detalhe}`:""}`);
+      }
+      const data = await res.json();
+      const txt = data.content?.find(b=>b.type==="text")?.text || "";
+      if(!txt) throw new Error("A IA retornou uma resposta vazia.");
+      let parsed;
+      try { parsed = JSON.parse(txt.replace(/```json|```/g,"").trim()); }
+      catch(e){ throw new Error(`Resposta da IA não veio em JSON válido. Início: "${txt.slice(0,150)}"`); }
+      setResultado(parsed);
+    } catch(e) {
+      setErro(e.message || "Não foi possível analisar a triagem.");
+    }
+    setAnalisando(false);
+  };
+
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:"#fff",width:640,maxWidth:"100%",maxHeight:"90vh",overflow:"auto",borderRadius:10,padding:"1.75rem",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
+        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 4px",fontWeight:600}}>🔍 Triagem de caso novo</p>
+        <p style={{fontSize:12,color:"var(--text2)",margin:"0 0 16px"}}>Cole a transcrição da reunião (Zoom/Meet) e, se quiser, anexe documentos — a IA analisa e sugere classificação, viabilidade e checklist. Nada é criado automaticamente.</p>
+
+        {!resultado ? (
+          <>
+            <div style={{marginBottom:12}}>
+              <span style={lbl}>Transcrição da reunião</span>
+              <textarea value={transcricao} onChange={e=>setTranscricao(e.target.value)} style={{...inp,minHeight:160,resize:"vertical"}} placeholder="Cole aqui a transcrição gerada pelo Zoom/Meet…"/>
+            </div>
+            <div style={{marginBottom:16}}>
+              <span style={lbl}>Anexar documento (opcional)</span>
+              <input type="file" accept=".pdf,application/pdf,.txt,text/plain" onChange={lerArquivo} disabled={lendoArquivo} style={{fontSize:12,marginBottom:6}}/>
+              {lendoArquivo && <p style={{fontSize:11,color:"var(--accent)",margin:"0 0 6px"}}>Lendo o PDF…</p>}
+              {textoDocumentos && <p style={{fontSize:10.5,color:"var(--green)",margin:0}}>✓ Documento(s) anexado(s) e lido(s).</p>}
+            </div>
+            {erro && <p style={{fontSize:12,color:"var(--red)",margin:"0 0 12px"}}>{erro}</p>}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={onClose} style={btnSec}>Cancelar</button>
+              <button onClick={analisarComIA} disabled={analisando} style={btnPri}>{analisando?"Analisando…":"✨ Analisar triagem"}</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
+              <div style={{background:"var(--bg2)",borderRadius:7,padding:"12px 14px"}}>
+                <p style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text2)",margin:"0 0 6px"}}>Classificação</p>
+                <p style={{fontSize:13,margin:0}}><strong>{resultado.classificacao?.areaDireito||"—"}</strong> · {resultado.classificacao?.tipoAcaoSugerido||"—"}</p>
+              </div>
+              <div style={{background:"var(--bg2)",borderRadius:7,padding:"12px 14px"}}>
+                <p style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text2)",margin:"0 0 8px"}}>Viabilidade</p>
+                {resultado.viabilidade?.pontosFavoraveis?.length>0 && (<>
+                  <p style={{fontSize:11.5,fontWeight:600,color:"var(--green)",margin:"0 0 4px"}}>Pontos favoráveis</p>
+                  <ul style={{margin:"0 0 8px",paddingLeft:18,fontSize:12.5}}>{resultado.viabilidade.pontosFavoraveis.map((x,i)=><li key={i}>{x}</li>)}</ul>
+                </>)}
+                {resultado.viabilidade?.riscos?.length>0 && (<>
+                  <p style={{fontSize:11.5,fontWeight:600,color:"var(--red)",margin:"0 0 4px"}}>Riscos</p>
+                  <ul style={{margin:"0 0 8px",paddingLeft:18,fontSize:12.5}}>{resultado.viabilidade.riscos.map((x,i)=><li key={i}>{x}</li>)}</ul>
+                </>)}
+                {resultado.viabilidade?.observacaoGeral && <p style={{fontSize:12,color:"var(--text2)",margin:0,fontStyle:"italic"}}>{resultado.viabilidade.observacaoGeral}</p>}
+              </div>
+              {resultado.checklistDocumentos?.length>0 && (
+                <div style={{background:"var(--bg2)",borderRadius:7,padding:"12px 14px"}}>
+                  <p style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text2)",margin:"0 0 8px"}}>Checklist de documentos necessários</p>
+                  <ul style={{margin:0,paddingLeft:18,fontSize:12.5}}>{resultado.checklistDocumentos.map((x,i)=><li key={i}>{x}</li>)}</ul>
+                </div>
+              )}
+              <div style={{background:"var(--bg2)",borderRadius:7,padding:"12px 14px"}}>
+                <p style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text2)",margin:"0 0 6px"}}>Resumo (pronto para o Resumo Executivo)</p>
+                <p style={{fontSize:12.5,margin:"0 0 6px"}}>{resultado.resumoCaso}</p>
+                <p style={{fontSize:12,color:"var(--text2)",margin:0}}><strong>Situação atual:</strong> {resultado.situacaoAtual}</p>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>setResultado(null)} style={btnSec}>← Analisar de novo</button>
+              <button onClick={onClose} style={btnSec}>Fechar sem criar</button>
+              <button onClick={()=>onUsarParaFicha(resultado)} style={btnPri}>Criar cliente/processo com esses dados</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ModalFichaAtendimento({clientes, setClientes, setProcessos, setTarefas, classificacoesCustom, onClose, onConcluido, leadOrigem, onLeadProcessado}){
   const [nomeCliente, setNomeCliente] = useState(leadOrigem?.nome || "");
   const [tipoAcao, setTipoAcao] = useState("");
@@ -3236,6 +3563,8 @@ function PaginaProcessos({processos,setProcessos,clientes,setClientes,mapas,setM
   const [acaoLote,setAcaoLote]=useState(null);
   const [filtroKpi,setFiltroKpi]=useState(null); // 'vencidos' | 'proximos' | 'aguardando' | 'andamento' | null
   const [abrindoFicha,setAbrindoFicha]=useState(false);
+  const [triandoCaso,setTriandoCaso]=useState(false);
+  const [leadDeTriagem,setLeadDeTriagem]=useState(null);
   const [executandoAposFicha,setExecutandoAposFicha]=useState(null);
   const [menuAbertoId,setMenuAbertoId]=useState(null);
   const [atribuindoRespId,setAtribuindoRespId]=useState(null);
@@ -3294,6 +3623,21 @@ function PaginaProcessos({processos,setProcessos,clientes,setClientes,mapas,setM
     setSelected(s=>{
       if(!s||s.id!==id) return s;
       return {...s, exitos: [...(s.exitos||[]), registro], debito: null};
+    });
+  };
+
+  // Registra o desfecho oposto ao êxito: quando o processo se encerra SEM
+  // recuperação de valor (prescrição, decadência, quitação sem honorários de
+  // êxito, etc.) — usado no relatório ao cliente para calcular a taxa de
+  // recuperação da carteira.
+  const registrarExtincao = (id, registro) => {
+    setProcessos(ps=>ps.map(p=>{
+      if(p.id!==id) return p;
+      return registrarHistorico({...p, extincoes: [...(p.extincoes||[]), registro], debito: null}, `Extinção registrada: ${fmtBRL(registro?.valor||0)} (${registro?.motivo||"sem recuperação"})`, usuarioAtual);
+    }));
+    setSelected(s=>{
+      if(!s||s.id!==id) return s;
+      return {...s, extincoes: [...(s.extincoes||[]), registro], debito: null};
     });
   };
 
@@ -3714,6 +4058,7 @@ function PaginaProcessos({processos,setProcessos,clientes,setClientes,mapas,setM
             <Icon name="checkSquare" size={14}/>{modoSelecao?"Cancelar":"Selecionar"}
           </button>
           <button onClick={()=>setAbrindoFicha(true)} style={{...btnSec,display:"flex",alignItems:"center",gap:7}}>Ficha de Atendimento</button>
+          <button onClick={()=>setTriandoCaso(true)} style={{...btnSec,display:"flex",alignItems:"center",gap:7}}>🔍 Triagem com IA</button>
           <button onClick={()=>setNovo(true)} style={{...btnPri,display:"flex",alignItems:"center",gap:7}}><Icon name="plus" size={14} color="#fff"/>Novo processo</button>
         </div>
       </div>
@@ -3967,7 +4312,7 @@ function PaginaProcessos({processos,setProcessos,clientes,setClientes,mapas,setM
       </div>
       <p style={{fontSize:11,color:"var(--text2)",marginTop:8,textAlign:"right"}}>{lista.length} registro(s)</p>
       {acaoLote&&<ModalAcaoLote tipo={acaoLote} qtd={selecionados.size} clientes={clientes} classificacoes={[...CLASSIFICACOES_VALIDAS,...(classificacoesCustom||[])]} onAplicar={aplicarLote} onClose={()=>setAcaoLote(null)}/>}
-      {selected&&!editando&&<ModalDetalhe p={selected} cliente={clienteDe(selected)} clientes={clientes} processos={processos} onClose={()=>setSelected(null)} onEdit={p=>{setEditando(p);setSelected(null);}} onChecklistUpdate={updateChecklist} onSavePrazo={abrirAnalisePrazo} onSaveDebito={saveDebito} onCumprirPrazo={cumprirPrazo} onToggleArquivado={toggleArquivado} onAddAndamento={addAndamento} onSaveAssunto={saveAssunto} onAddTarefaProcesso={addTarefaProcesso} onSaveDriveLink={saveDriveLink} tarefasDoProcesso={(tarefas||[]).filter(t=>t.procId===selected.id)} onConcluirTarefaProc={concluirTarefaProc} onArquivarTarefaProc={arquivarTarefaProc} onSaveVinculo={saveVinculo} onRemoverVinculo={removerVinculo} onAbrirOutroProcesso={proc=>setSelected(proc)} onRegistrarExito={registrarExito} onSaveAudiencia={saveAudiencia} onSaveCampo={(id,campo,valor)=>{setProcessos(ps=>ps.map(x=>x.id===id?registrarHistorico({...x,[campo]:valor}, `Campo "${campo}" alterado para "${valor}"`, usuarioAtual):x)); setSelected(s=>s&&s.id===id?{...s,[campo]:valor}:s);}} onSalvarPrazoProcesso={salvarPrazoDoProcesso} onSalvarPartes={salvarPartes} onSalvarResumo={salvarResumoExecutivo} onEditarAndamento={editarAndamento} onExcluirAndamento={excluirAndamento}/>}
+      {selected&&!editando&&<ModalDetalhe p={selected} cliente={clienteDe(selected)} clientes={clientes} processos={processos} onClose={()=>setSelected(null)} onEdit={p=>{setEditando(p);setSelected(null);}} onChecklistUpdate={updateChecklist} onSavePrazo={abrirAnalisePrazo} onSaveDebito={saveDebito} onCumprirPrazo={cumprirPrazo} onToggleArquivado={toggleArquivado} onAddAndamento={addAndamento} onSaveAssunto={saveAssunto} onAddTarefaProcesso={addTarefaProcesso} onSaveDriveLink={saveDriveLink} tarefasDoProcesso={(tarefas||[]).filter(t=>t.procId===selected.id)} onConcluirTarefaProc={concluirTarefaProc} onArquivarTarefaProc={arquivarTarefaProc} onSaveVinculo={saveVinculo} onRemoverVinculo={removerVinculo} onAbrirOutroProcesso={proc=>setSelected(proc)} onRegistrarExito={registrarExito} onRegistrarExtincao={registrarExtincao} onSaveAudiencia={saveAudiencia} onSaveCampo={(id,campo,valor)=>{setProcessos(ps=>ps.map(x=>x.id===id?registrarHistorico({...x,[campo]:valor}, `Campo "${campo}" alterado para "${valor}"`, usuarioAtual):x)); setSelected(s=>s&&s.id===id?{...s,[campo]:valor}:s);}} onSalvarPrazoProcesso={salvarPrazoDoProcesso} onSalvarPartes={salvarPartes} onSalvarResumo={salvarResumoExecutivo} onEditarAndamento={editarAndamento} onExcluirAndamento={excluirAndamento}/>}
       {(editando||novo)&&<ModalFormProc processo={editando} clientes={clientes} onSave={salvar} onClose={()=>{setEditando(null);setNovo(false);}} onNovoCliente={onNovoCliente} classificacoesCustom={classificacoesCustom||[]} onNovaClassificacao={nova=>{ if(setClassificacoesCustom) setClassificacoesCustom(cs=>cs.includes(nova)?cs:[...cs,nova]); }}/>}
       {mapaProc&&<ModalMapa proc={mapaProc} mapaData={mapas[mapaProc.id]||defaultMap()} onChange={data=>setMapas(m=>({...m,[mapaProc.id]:data}))} onClose={()=>setMapaProc(null)}/>}
       {analisandoPrazo&&<ModalConfirmarPrazo proc={analisandoPrazo} sugestao={sugestaoPrazo} dataAndamento={[...(analisandoPrazo.andamentos||[])].sort((a,b)=>b.data.localeCompare(a.data))[0]?.data||""} onConfirm={salvarPrazo} onClose={()=>{setAnalisandoPrazo(null);setSugestaoPrazo(null);}}/>}
@@ -3992,9 +4337,11 @@ function PaginaProcessos({processos,setProcessos,clientes,setClientes,mapas,setM
       {abrindoFicha&&<ModalFichaAtendimento
         clientes={clientes} setClientes={setClientes} setProcessos={setProcessos} setTarefas={setTarefas}
         classificacoesCustom={classificacoesCustom}
-        onClose={()=>setAbrindoFicha(false)}
+        leadOrigem={leadDeTriagem}
+        onClose={()=>{setAbrindoFicha(false);setLeadDeTriagem(null);}}
         onConcluido={(processo,cliente,esbocarInicial)=>{
           setAbrindoFicha(false);
+          setLeadDeTriagem(null);
           if(esbocarInicial){
             setExecutandoAposFicha({
               tarefa: {id:"temp-"+processo.id, titulo:"Elaborar petição inicial", status:"pendente", prazo:"", desc:processo.obs||""},
@@ -4003,6 +4350,21 @@ function PaginaProcessos({processos,setProcessos,clientes,setClientes,mapas,setM
           } else {
             setSelected(processo);
           }
+        }}
+      />}
+      {triandoCaso&&<ModalTriagemCaso
+        onClose={()=>setTriandoCaso(false)}
+        onUsarParaFicha={resultado=>{
+          setLeadDeTriagem({
+            nome: resultado.nomeCliente || "",
+            descricao: [
+              resultado.resumoCaso,
+              resultado.classificacao?.areaDireito ? `Área sugerida: ${resultado.classificacao.areaDireito} — ${resultado.classificacao.tipoAcaoSugerido||""}` : "",
+              resultado.checklistDocumentos?.length ? `Documentos a solicitar: ${resultado.checklistDocumentos.join(", ")}` : "",
+            ].filter(Boolean).join("\n\n"),
+          });
+          setTriandoCaso(false);
+          setAbrindoFicha(true);
         }}
       />}
       {executandoAposFicha&&<ModalExecutarTarefaIA
@@ -4172,6 +4534,7 @@ function PaginaClientes({clientes, setClientes, processos, onAbrirProcesso, clie
   const [selecionado,setSelecionado]=useState(null);
   const [editandoCliente,setEditandoCliente]=useState(false);
   const [formEdicao,setFormEdicao]=useState(null);
+  const [gerandoRelatorio,setGerandoRelatorio]=useState(false);
   const [qualifCopiada,setQualifCopiada]=useState(null);
   const [gerandoDoc,setGerandoDoc]=useState(null); // 'procuracao' | null
   const [erroDoc,setErroDoc]=useState("");
@@ -4406,6 +4769,7 @@ Use string vazia em qualquer campo que não aparecer claramente no documento. Nu
       </div>
 
       {(editando||novo)&&<ModalFormCliente cliente={editando} onSave={salvar} onClose={()=>{setEditando(null);setNovo(false);}}/>}
+      {gerandoRelatorio&&selecionado&&<ModalGerarRelatorio cliente={selecionado} processosDoCliente={procsDe(selecionado.id)} onClose={()=>setGerandoRelatorio(false)}/>}
 
       {selecionado&&(
         <div onClick={e=>e.target===e.currentTarget&&setSelecionado(null)} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.45)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
@@ -4473,7 +4837,10 @@ Use string vazia em qualquer campo que não aparecer claramente no documento. Nu
               </>
             )}
             <div style={{borderTop:"1px solid var(--border1)",paddingTop:14}}>
-              <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text2)",margin:"0 0 10px"}}>Processos vinculados ({procsDe(selecionado.id).length})</p>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text2)",margin:0}}>Processos vinculados ({procsDe(selecionado.id).length})</p>
+                {procsDe(selecionado.id).length>0 && <button onClick={()=>setGerandoRelatorio(true)} style={{...btnSec,fontSize:10.5,padding:"5px 11px"}}>📊 Gerar relatório</button>}
+              </div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {procsDe(selecionado.id).map(p=>(
                   <div key={p.id} onClick={()=>{onAbrirProcesso(p);setSelecionado(null);}} style={{border:"1px solid var(--border1)",borderRadius:6,padding:"10px 12px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
@@ -7140,6 +7507,7 @@ function AppPrincipal({user}){
   const [erroCarregamento, setErroCarregamento] = useState("");
   const [avisoTabelasFaltando, setAvisoTabelasFaltando] = useState([]);
   const [pagina, setPagina] = useState("dashboard");
+  const [sidebarMobileAberta, setSidebarMobileAberta] = useState(false);
   const [processos, setProcessos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [parcelas, setParcelas] = useState([]);
@@ -7427,6 +7795,7 @@ function AppPrincipal({user}){
           historicoAlteracoes: parseCampo(p.historicoAlteracoes, []),
           atualizacoesPendentes: parseCampo(p.atualizacoesPendentes, null),
           movimentacoesCnj: parseCampo(p.movimentacoesCnj, []),
+          extincoes: parseCampo(p.extincoes, []),
         })));
         setClientes(rCli.data||[]);
         setParcelas(rParc.data||[]);
@@ -7450,7 +7819,7 @@ function AppPrincipal({user}){
   // "tarefas", "agenda", "clientes" etc. não têm colunas como "andamentos" ou "checklist" —
   // tentar enviá-las (mesmo como undefined) já causava erro "column not found" no Supabase.
   const CAMPOS_JSON_POR_TABELA = {
-    processos: ["andamentos","partes","checklist","exitos","debito","documentos","docChecklist","prazoProcessual","audiencia","vinculo","resumoExecutivo","historicoAlteracoes","atualizacoesPendentes","movimentacoesCnj"],
+    processos: ["andamentos","partes","checklist","exitos","extincoes","debito","documentos","docChecklist","prazoProcessual","audiencia","vinculo","resumoExecutivo","historicoAlteracoes","atualizacoesPendentes","movimentacoesCnj"],
   };
 
   const autoSave = React.useCallback((tabela, dados, delay=1200) => {
@@ -7595,13 +7964,18 @@ function AppPrincipal({user}){
   }
 
   return (
-    <div id="root-app" style={{display:"flex",height:"100vh",overflow:"hidden"}}>
-      <div className="sidebar" style={{width:224,background:"var(--navy)",borderRight:"1px solid #2A251E",padding:"26px 14px 20px",display:"flex",flexDirection:"column",flexShrink:0,overflowY:"auto"}}>
+    <div id="root-app" style={{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
+      <div className="topbar-mobile">
+        <button onClick={()=>setSidebarMobileAberta(true)} style={{background:"none",border:"none",color:"#fff",fontSize:22,cursor:"pointer",padding:"2px 6px",lineHeight:1}}>☰</button>
+        <img src={LOGO_MICHELLI_ABREU} alt="Michelli Abreu Advocacia" style={{height:26,width:"auto",display:"block"}}/>
+      </div>
+      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+      <div className={"sidebar"+(sidebarMobileAberta?" sidebar-aberta":"")} style={{width:224,background:"var(--navy)",borderRight:"1px solid #2A251E",padding:"26px 14px 20px",display:"flex",flexDirection:"column",flexShrink:0,overflowY:"auto"}}>
         <img src={LOGO_MICHELLI_ABREU} alt="Michelli Abreu Advocacia" style={{width:"100%",maxWidth:170,margin:"0 8px 34px",display:"block"}}/>
         {NAV.map(n=>{
           const ativo = pagina===n.id;
           return (
-            <div key={n.id} className="sidebar-item" onClick={()=>setPagina(n.id)} style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",borderRadius:8,cursor:"pointer",marginBottom:3,position:"relative",background:ativo?"rgba(255,255,255,.06)":"transparent",color:ativo?"#fff":"rgba(255,255,255,.58)",fontSize:12.5,fontWeight:ativo?600:500,transition:"background .15s,color .15s"}}>
+            <div key={n.id} className="sidebar-item" onClick={()=>{setPagina(n.id);setSidebarMobileAberta(false);}} style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",borderRadius:8,cursor:"pointer",marginBottom:3,position:"relative",background:ativo?"rgba(255,255,255,.06)":"transparent",color:ativo?"#fff":"rgba(255,255,255,.58)",fontSize:12.5,fontWeight:ativo?600:500,transition:"background .15s,color .15s"}}>
               {ativo && <span style={{position:"absolute",left:0,top:"20%",bottom:"20%",width:3,borderRadius:3,background:"var(--accent)"}}/>}
               <Icon name={n.icon} size={16} color={ativo?"#EADFD5":"rgba(255,255,255,.55)"}/>
               {n.label}
@@ -7622,7 +7996,8 @@ function AppPrincipal({user}){
           </div>
         </div>
       </div>
-      <div style={{flex:1,overflow:"auto",padding:"24px 32px"}}>
+      <div className={"sidebar-backdrop"+(sidebarMobileAberta?" aberta":"")} onClick={()=>setSidebarMobileAberta(false)}></div>
+      <div className="conteudo-principal" style={{flex:1,overflow:"auto",padding:"24px 32px"}}>
         {pagina==="dashboard" && <PaginaDashboard processos={processos} parcelas={parcelas} clientes={clientes} tarefas={tarefas} setTarefas={setTarefas} agenda={agenda} equipe={equipe} intimacoes={intimacoes} onAbrirProcesso={abrirProcesso} onIrPara={irPara} setProcessos={setProcessos} setClientes={setClientes} onVerPrazoRapido={setPrazoRapido} leadsAtendimento={leadsAtendimento} onLeadProcessado={marcarLeadProcessado} onDescartarLead={descartarLead} classificacoesCustom={classificacoesCustom}/>}
         {pagina==="processos" && <PaginaProcessos processos={processos} setProcessos={setProcessos} clientes={clientes} setClientes={setClientes} mapas={mapas} setMapas={setMapas} onNovoCliente={()=>{setPagina("clientes");setClienteParaAbrir(true);}} abrirProcessoId={abrirProcessoId} onProcessoAberto={()=>setAbrirProcessoId(null)} tarefas={tarefas} setTarefas={setTarefas} setAgenda={setAgenda} setParcelas={setParcelas} classificacoesCustom={classificacoesCustom} setClassificacoesCustom={setClassificacoesCustom} usuarioAtual={user?.email||"desconhecido"}/>}
         {pagina==="clientes" && <PaginaClientes clientes={clientes} setClientes={setClientes} processos={processos} onAbrirProcesso={abrirProcesso} clienteParaAbrir={clienteParaAbrir} onClienteAberto={()=>setClienteParaAbrir(false)} documentosCliente={documentosCliente} onAdicionarDocumento={adicionarDocumentoCliente} onExcluirDocumento={excluirDocumentoCliente}/>}
@@ -7634,6 +8009,7 @@ function AppPrincipal({user}){
         {pagina==="intimacoes" && <PaginaIntimacoes intimacoes={intimacoes} setIntimacoes={setIntimacoes} processos={processos} setProcessos={setProcessos} clientes={clientes} setClientes={setClientes} equipe={equipe} setTarefas={setTarefas} onAbrirProcesso={abrirProcesso} configDjen={{oabNumero:oabNumeroConfig, oabUf:oabUfConfig, salvarConfig:salvarConfigDjen}}/>}
         {pagina==="importacao" && <PaginaImportacao processos={processos} setProcessos={setProcessos} clientes={clientes} setClientes={setClientes}/>}
         {pagina==="equipe" && <PaginaEquipe equipe={equipe} setEquipe={setEquipe}/>}
+      </div>
       </div>
       {prazoRapido && <ModalPrazoRapido
         tarefa={prazoRapido}
