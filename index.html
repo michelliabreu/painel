@@ -6777,7 +6777,7 @@ function TarefasAgrupadas({lista, processos, clientes, equipe, onAbrirProcesso, 
   );
 }
 
-function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, equipe, onAbrirProcesso, onVerPrazoRapido}){
+function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, equipe, onAbrirProcesso, onVerPrazoRapido, onSalvarComGoogle, onExcluirNoGoogle, googleConectado}){
   const [editando,setEditando] = useState(null);
   const [novo,setNovo] = useState(false);
   const [filtroStatus,setFiltroStatus] = useState("todos");
@@ -6802,8 +6802,12 @@ function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, 
     });
   },[ativas,filtroStatus,filtroResp,busca]);
 
-  const salvar = form => {
-    setTarefas(ts=>form.id?ts.map(t=>t.id===form.id?form:t):[...ts,{...form,id:Date.now(),arquivada:false}]);
+  const salvar = async form => {
+    if(googleConectado && onSalvarComGoogle){
+      await onSalvarComGoogle(form);
+    } else {
+      setTarefas(ts=>form.id?ts.map(t=>t.id===form.id?form:t):[...ts,{...form,id:Date.now(),arquivada:false}]);
+    }
   };
   const mudarStatus = (id, status) => {
     setTarefas(ts=>ts.map(t=>t.id===id?{...t,status}:t));
@@ -6812,11 +6816,14 @@ function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, 
       if(tarefa?.origemPrazoProcId && setProcessos){
         setProcessos(ps=>ps.map(p=>p.id===tarefa.origemPrazoProcId?{...p,prazo:"",prazoAto:""}:p));
       }
+      if(tarefa?.googleEventId && onExcluirNoGoogle) onExcluirNoGoogle(tarefa.googleEventId);
     }
   };
   const arquivar = id => setTarefas(ts=>ts.map(t=>t.id===id?{...t,arquivada:true}:t));
   const excluir = id => {
     if(!confirm("Excluir este prazo/tarefa? Esta ação não pode ser desfeita.")) return;
+    const tarefa = (tarefas||[]).find(t=>t.id===id);
+    if(tarefa?.googleEventId && onExcluirNoGoogle) onExcluirNoGoogle(tarefa.googleEventId);
     setTarefas(ts=>ts.filter(t=>t.id!==id));
     excluirNoSupabase("tarefas", id);
   };
@@ -6824,12 +6831,23 @@ function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, 
   const respNome = id => (equipe||[]).find(m=>String(m.id)===String(id))?.nome || "";
   const procNum = id => processos.find(p=>String(p.id)===String(id))?.numero || "";
 
+  const [sincronizandoTudo, setSincronizandoTudo] = useState(false);
+  const sincronizarTodasComGoogle = async () => {
+    if(!googleConectado || !onSalvarComGoogle) return;
+    const pendentesComPrazo = ativas.filter(t=>t.prazo && t.status!=="concluido");
+    if(pendentesComPrazo.length===0){ alert("Nenhum prazo/tarefa pendente com data definida pra sincronizar."); return; }
+    setSincronizandoTudo(true);
+    for(const t of pendentesComPrazo){ await onSalvarComGoogle(t); }
+    setSincronizandoTudo(false);
+    alert(`${pendentesComPrazo.length} prazo(s)/tarefa(s) sincronizados com o Google Agenda.`);
+  };
+
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16}}>
         <div>
           <h1 style={{fontSize:22,fontWeight:700,color:"var(--text1)",margin:"0 0 3px",letterSpacing:"-.02em"}}>Prazos e Tarefas</h1>
-          <p style={{fontSize:12.5,color:"var(--text2)",margin:0}}>{ativas.length} item(ns) ativo(s)</p>
+          <p style={{fontSize:12.5,color:"var(--text2)",margin:0}}>{ativas.length} item(ns) ativo(s){googleConectado?" · 📅 sincronizando com o Google Agenda":" · Google Agenda não conectado (conecte na aba Agenda para os prazos aparecerem lá)"}</p>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{display:"flex",background:"var(--bg2)",borderRadius:7,padding:3}}>
@@ -6838,6 +6856,7 @@ function PaginaTarefas({tarefas, setTarefas, processos, setProcessos, clientes, 
             ))}
           </div>
           <button onClick={()=>setNovo(true)} style={{...btnPri,padding:"9px 18px",fontSize:12.5}}>+ Novo prazo/tarefa</button>
+          {googleConectado && <button onClick={sincronizarTodasComGoogle} disabled={sincronizandoTudo} style={{...btnSec,padding:"9px 14px",fontSize:12}}>{sincronizandoTudo?"Sincronizando…":"🔄 Sincronizar tudo"}</button>}
         </div>
       </div>
       <div style={{background:"#fff",border:"1px solid var(--border1)",borderRadius:8,padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}>
@@ -7669,6 +7688,55 @@ function AppPrincipal({user}){
     } catch(e) { console.error("Erro ao excluir evento no Google Agenda:", e); }
   }, [googleToken]);
 
+  // Envia um prazo/tarefa (da tela "Prazos e Tarefas") pro Google Agenda,
+  // com alerta — diferente do compromisso, a tarefa só tem uma data (sem
+  // hora marcada), então vira um evento às 9h do dia do prazo, com aviso
+  // (popup) na hora e também 1 dia antes.
+  const enviarTarefaAoGoogle = React.useCallback(async (tarefa, token) => {
+    const tk = token || googleToken;
+    if(!tk || !tarefa.prazo) return null;
+    const corpo = {
+      summary: "⏱ " + tarefa.titulo,
+      description: [tarefa.desc, "Enviado automaticamente do painel jurídico — Prazos e Tarefas."].filter(Boolean).join("\n\n"),
+      start: { dateTime: `${tarefa.prazo}T09:00:00`, timeZone: "America/Sao_Paulo" },
+      end: { dateTime: `${tarefa.prazo}T09:30:00`, timeZone: "America/Sao_Paulo" },
+      reminders: { useDefault: false, overrides: [{method:"popup", minutes:0},{method:"popup", minutes:60*24}] },
+    };
+    try {
+      const url = tarefa.googleEventId
+        ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${tarefa.googleEventId}`
+        : `https://www.googleapis.com/calendar/v3/calendars/primary/events`;
+      const res = await fetch(url, {
+        method: tarefa.googleEventId ? "PATCH" : "POST",
+        headers: { Authorization: `Bearer ${tk}`, "Content-Type": "application/json" },
+        body: JSON.stringify(corpo),
+      });
+      if(!res.ok) return null;
+      const data = await res.json();
+      return data.id;
+    } catch(e) {
+      console.error("Erro ao enviar prazo/tarefa ao Google Agenda:", e);
+      return null;
+    }
+  }, [googleToken]);
+
+  // Salva a tarefa e, se tiver prazo e o Google estiver conectado, sincroniza
+  // (cria/atualiza o evento) automaticamente — sem precisar de ação manual.
+  const salvarTarefaComGoogle = React.useCallback(async (form) => {
+    const isNova = !form.id;
+    const tarefaComId = isNova ? {...form, id: Date.now(), arquivada:false} : form;
+    if(googleToken && tarefaComId.prazo){
+      const googleEventId = await enviarTarefaAoGoogle(tarefaComId, googleToken);
+      if(googleEventId) tarefaComId.googleEventId = googleEventId;
+    } else if(!tarefaComId.prazo && tarefaComId.googleEventId){
+      // prazo removido — some do Google também
+      excluirEventoNoGoogle(tarefaComId.googleEventId, googleToken);
+      tarefaComId.googleEventId = null;
+    }
+    setTarefas(ts=>isNova?[...ts,tarefaComId]:ts.map(t=>t.id===tarefaComId.id?tarefaComId:t));
+    return tarefaComId;
+  }, [googleToken, enviarTarefaAoGoogle, excluirEventoNoGoogle, setTarefas]);
+
   const sincronizarComGoogle = React.useCallback(async (tokenParam) => {
     const tk = tokenParam || googleToken;
     if(!tk) return;
@@ -8011,7 +8079,7 @@ function AppPrincipal({user}){
         {pagina==="processos" && <PaginaProcessos processos={processos} setProcessos={setProcessos} clientes={clientes} setClientes={setClientes} mapas={mapas} setMapas={setMapas} onNovoCliente={()=>{setPagina("clientes");setClienteParaAbrir(true);}} abrirProcessoId={abrirProcessoId} onProcessoAberto={()=>setAbrirProcessoId(null)} tarefas={tarefas} setTarefas={setTarefas} setAgenda={setAgenda} setParcelas={setParcelas} classificacoesCustom={classificacoesCustom} setClassificacoesCustom={setClassificacoesCustom} usuarioAtual={user?.email||"desconhecido"}/>}
         {pagina==="clientes" && <PaginaClientes clientes={clientes} setClientes={setClientes} processos={processos} onAbrirProcesso={abrirProcesso} clienteParaAbrir={clienteParaAbrir} onClienteAberto={()=>setClienteParaAbrir(false)} documentosCliente={documentosCliente} onAdicionarDocumento={adicionarDocumentoCliente} onExcluirDocumento={excluirDocumentoCliente}/>}
         {pagina==="captacao" && <PaginaCaptacao leads={leadsCaptacao} onMoverStatus={moverStatusLead} onSalvarObservacoes={salvarObservacoesLead} onSalvarResponsavel={salvarResponsavelLead} onConverterCliente={converterLeadEmCliente} onAbrirCliente={()=>setPagina("clientes")}/>}
-        {pagina==="tarefas" && <PaginaTarefas tarefas={tarefas} setTarefas={setTarefas} processos={processos} setProcessos={setProcessos} clientes={clientes} equipe={equipe} onAbrirProcesso={abrirProcesso} onVerPrazoRapido={setPrazoRapido}/>}
+        {pagina==="tarefas" && <PaginaTarefas tarefas={tarefas} setTarefas={setTarefas} processos={processos} setProcessos={setProcessos} clientes={clientes} equipe={equipe} onAbrirProcesso={abrirProcesso} onVerPrazoRapido={setPrazoRapido} onSalvarComGoogle={salvarTarefaComGoogle} onExcluirNoGoogle={excluirEventoNoGoogle} googleConectado={!!googleToken}/>}
         {pagina==="agenda" && <PaginaAgenda agenda={agenda} setAgenda={setAgenda} processos={processos} clientes={clientes} equipe={equipe} tarefas={tarefas} onAbrirProcesso={abrirProcesso} onIrParaTarefa={()=>setPagina("tarefas")} googleConectado={!!googleToken} googleSincronizando={googleSincronizando} googleUltimaSinc={googleUltimaSinc} googleErro={googleErro} onConectarGoogle={conectarGoogle} onDesconectarGoogle={desconectarGoogle} onSincronizarGoogle={()=>sincronizarComGoogle()} onEnviarAoGoogle={enviarCompromissoAoGoogle} onExcluirNoGoogle={excluirEventoNoGoogle}/>}
         {pagina==="financeiro" && <PaginaFinanceiro parcelas={parcelas} setParcelas={setParcelas} despesas={despesas} setDespesas={setDespesas} processos={processos} clientes={clientes}/>}
         {pagina==="relatorios" && <PaginaRelatorios processos={processos} parcelas={parcelas} clientes={clientes}/>}
