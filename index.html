@@ -7884,33 +7884,41 @@ function AppPrincipal({user}){
     })();
   }, [carregandoDados]);
 
-  // Correção única: prazos que já foram marcados como cumpridos (tarefa concluída)
-  // antes de existir a sincronização automática ficaram com o processo ainda
-  // mostrando "prazo em aberto". Ao carregar o sistema, confere e corrige isso
-  // sozinho, sem precisar de ação manual.
+  // Correção única (roda só uma vez de verdade, nunca mais de novo): prazos
+  // que já foram marcados como cumpridos (tarefa concluída) antes de existir
+  // a sincronização automática ficaram com o processo ainda mostrando "prazo
+  // em aberto". Só limpa quando o prazo atual do processo bate exatamente
+  // com o prazo registrado na tarefa concluída — assim nunca apaga um prazo
+  // novo e legítimo que tenha sido definido depois.
   React.useEffect(()=>{
     if(carregandoDados) return;
-    const idsParaLimpar = new Set(
-      (tarefas||[]).filter(t=>t.origemPrazoProcId && t.status==="concluido").map(t=>t.origemPrazoProcId)
-    );
-    if(idsParaLimpar.size===0) return;
-    const precisaLimpar = processos.some(p=>idsParaLimpar.has(p.id) && p.prazo);
-    if(!precisaLimpar) return;
-    setProcessos(ps=>ps.map(p=>(idsParaLimpar.has(p.id) && p.prazo) ? {...p, prazo:"", prazoAto:""} : p));
+    if(localStorage.getItem("migracao_prazo_concluido_v2")) return;
+    const tarefasConcluidas = (tarefas||[]).filter(t=>t.origemPrazoProcId && t.status==="concluido");
+    if(tarefasConcluidas.length>0){
+      const porProcesso = new Map(tarefasConcluidas.map(t=>[t.origemPrazoProcId, t]));
+      setProcessos(ps=>ps.map(p=>{
+        const t = porProcesso.get(p.id);
+        if(!t || !p.prazo) return p;
+        if(t.prazo && t.prazo!==p.prazo) return p; // prazo atual é outro, mais novo — não mexe
+        return {...p, prazo:"", prazoAto:""};
+      }));
+    }
+    localStorage.setItem("migracao_prazo_concluido_v2", "1");
   }, [carregandoDados]);
 
-  // Correção única: a aba separada "CNJ" existiu brevemente e acumulou um
-  // feed bruto de movimentações (coluna movimentacoesCnj). Como voltamos a
-  // filtrar direto na fonte (só despacho/decisão/ato ordinatório) e a
-  // gravar tudo junto nos Andamentos de novo, esta correção migra de volta
-  // pra lá só o que passa nesse filtro — o resto (distribuição, conclusão
-  // etc.) é descartado por não ser relevante — sem duplicar o que já
-  // estiver nos Andamentos.
+  // Correção única (roda só uma vez de verdade, nunca mais de novo): a aba
+  // separada "CNJ" existiu brevemente e acumulou um feed bruto de
+  // movimentações (coluna movimentacoesCnj). Como voltamos a filtrar direto
+  // na fonte (só despacho/decisão/ato ordinatório) e a gravar tudo junto nos
+  // Andamentos de novo, esta correção migra de volta pra lá só o que passa
+  // nesse filtro — o resto (distribuição, conclusão etc.) é descartado por
+  // não ser relevante — sem duplicar o que já estiver nos Andamentos.
   React.useEffect(()=>{
     if(carregandoDados) return;
+    if(localStorage.getItem("migracao_cnj_andamentos_v1")) return;
     const relevante = desc => { const n=(desc||"").toLowerCase(); return n.includes("despacho")||n.includes("decis")||n.includes("ato ordinat"); };
     const precisaMigrar = processos.some(p=>(p.movimentacoesCnj||[]).length>0);
-    if(!precisaMigrar) return;
+    if(!precisaMigrar) { localStorage.setItem("migracao_cnj_andamentos_v1", "1"); return; }
     setProcessos(ps=>ps.map(p=>{
       const pendentes = p.movimentacoesCnj||[];
       if(pendentes.length===0) return p;
@@ -7921,6 +7929,7 @@ function AppPrincipal({user}){
         : (p.andamentos||[]);
       return {...p, andamentos, movimentacoesCnj:null};
     }));
+    localStorage.setItem("migracao_cnj_andamentos_v1", "1");
   }, [carregandoDados]);
 
   const abrirProcesso = (proc) => { setAbrirProcessoId(proc.id); setPagina("processos"); };
