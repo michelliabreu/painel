@@ -26,6 +26,7 @@
   // Cole aqui o "Client ID" que você criar no Google Cloud Console (veja instruções da Michelli).
   // Sem isso preenchido, o botão "Conectar Google Agenda" mostra um aviso pedindo pra configurar.
   const GOOGLE_CLIENT_ID = "575185625953-847v9cc3knh3bnpi452h0b118lj0a3t1.apps.googleusercontent.com";
+  const PIX_RECEBIMENTO = "110.903.047-90";
   try {
     if (typeof pdfjsLib !== "undefined") {
       pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -726,6 +727,131 @@ Michelli Abreu Advocacia`
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div><span style={lbl}>Assunto</span><input value={assunto} onChange={e=>setAssunto(e.target.value)} style={inp}/></div>
           <div><span style={lbl}>Mensagem</span><textarea value={corpo} onChange={e=>setCorpo(e.target.value)} style={{...inp,minHeight:220,resize:"vertical",fontSize:12,lineHeight:1.5}}/></div>
+        </div>
+        <div style={{marginTop:18,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={btnSec}>Fechar</button>
+          <button onClick={abrirWhatsapp} style={{...btnSec,display:"flex",alignItems:"center",gap:6}}>💬 WhatsApp</button>
+          <button onClick={abrirGmail} disabled={!cliente?.email} style={{...btnPri,opacity:cliente?.email?1:.5,display:"flex",alignItems:"center",gap:6}}>✉ Gmail</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Gera o recibo de pagamento de parcela de honorários em Word (com timbrado).
+async function gerarReciboParaCliente(cliente, dadosRecibo){
+  const qualificacao = montarQualificacaoCliente(cliente);
+  const referenteA = dadosRecibo.numeroProcesso
+    ? `referente à parcela ${dadosRecibo.parcela}/${dadosRecibo.totalParcelas} dos honorários advocatícios contratados no âmbito do processo nº ${dadosRecibo.numeroProcesso}`
+    : `referente à parcela ${dadosRecibo.parcela}/${dadosRecibo.totalParcelas} dos honorários advocatícios contratados`;
+  const conteudo = [
+    "#TITULO#Recibo",
+    `Recebemos de ${qualificacao} a importância de ${fmtBRL(dadosRecibo.valor)}, ${referenteA}, paga em ${fmtData(dadosRecibo.dataPagamento)}.`,
+    "Para clareza e devidos fins, firmamos o presente recibo.",
+    `#CENTRO#Itaboraí, ${hoje.toLocaleDateString("pt-BR",{day:"2-digit",month:"long",year:"numeric"})}.`,
+    "#ASSINATURA_CENTRO#MICHELLI COSTA DE ABREU",
+    "#ASSINATURA_CENTRO#OAB/RJ 155.134",
+  ].join("\n");
+  const nomeArquivo = `Recibo_${nomeArquivoSeguro(cliente.nome)}_parcela${dadosRecibo.parcela}de${dadosRecibo.totalParcelas}`;
+  await gerarDocumentoTimbrado(nomeArquivo, conteudo);
+}
+
+function ModalEnviarRecibo({cliente, parcela, qualificacao, numeroProcesso, onClose}){
+  const [assunto,setAssunto] = useState(`Recibo — parcela ${parcela.parcela}/${parcela.totalParcelas} de honorários`);
+  const referenteA = numeroProcesso
+    ? `referente à parcela ${parcela.parcela}/${parcela.totalParcelas} dos honorários advocatícios contratados no âmbito do processo nº ${numeroProcesso}`
+    : `referente à parcela ${parcela.parcela}/${parcela.totalParcelas} dos honorários advocatícios contratados`;
+  const [corpo,setCorpo] = useState(
+`Prezado(a) ${cliente?.nome || "(cliente)"},
+
+Segue abaixo o recibo referente ao pagamento da parcela ${parcela.parcela}/${parcela.totalParcelas} dos honorários advocatícios.
+
+— — —
+
+RECIBO
+
+Recebemos de ${qualificacao || cliente?.nome || "(cliente)"} a importância de ${fmtBRL(parcela.valor)}, ${referenteA}, paga em ${fmtData(hoje.toISOString().slice(0,10))}.
+
+Para clareza e devidos fins, firmamos o presente recibo.
+
+Itaboraí, ${hoje.toLocaleDateString("pt-BR",{day:"2-digit",month:"long",year:"numeric"})}.
+
+Michelli Costa de Abreu
+OAB/RJ 155.134
+
+— — —
+
+Qualquer dúvida, estamos à disposição.
+
+Atenciosamente,
+Michelli Abreu Advocacia`
+  );
+  const abrirGmail = () => {
+    const to = encodeURIComponent(cliente?.email || "");
+    window.open(`https://mail.google.com/mail/?view=cm&to=${to}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`,"_blank");
+  };
+  const abrirWhatsapp = () => {
+    const texto = `${assunto}\n\n${corpo}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`,"_blank");
+  };
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:520,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:"#fff",width:540,maxWidth:"100%",maxHeight:"90vh",overflow:"auto",borderRadius:8,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.2)"}}>
+        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 4px",fontWeight:600}}>Enviar recibo ao cliente</p>
+        <div style={{background:"var(--accent-light)",border:"1px solid #B8D4F0",borderRadius:5,padding:"8px 12px",margin:"10px 0 12px",fontSize:11.5,color:"var(--navy2)"}}>✓ O texto do recibo já vem pronto no corpo da mensagem abaixo — não precisa anexar nada. Também baixamos uma cópia em Word pra você guardar, se quiser.</div>
+        {!cliente?.email && <div style={{background:"var(--amber-bg)",border:"1px solid #F5CE85",borderRadius:5,padding:"8px 12px",marginBottom:12,fontSize:11.5,color:"var(--amber)"}}>⚠ Cliente sem e-mail cadastrado — preencha no CRM para habilitar o envio por e-mail.</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div><span style={lbl}>Assunto</span><input value={assunto} onChange={e=>setAssunto(e.target.value)} style={inp}/></div>
+          <div><span style={lbl}>Mensagem</span><textarea value={corpo} onChange={e=>setCorpo(e.target.value)} style={{...inp,minHeight:320,resize:"vertical",fontSize:12,lineHeight:1.5,fontFamily:"monospace"}}/></div>
+        </div>
+        <div style={{marginTop:18,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={btnSec}>Fechar</button>
+          <button onClick={abrirWhatsapp} style={{...btnSec,display:"flex",alignItems:"center",gap:6}}>💬 WhatsApp</button>
+          <button onClick={abrirGmail} disabled={!cliente?.email} style={{...btnPri,opacity:cliente?.email?1:.5,display:"flex",alignItems:"center",gap:6}}>✉ Gmail</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalCobrarParcela({cliente, parcela, numeroProcesso, onClose}){
+  const dias = diasRest(parcela.vencimento);
+  const [assunto,setAssunto] = useState(`Cobrança — parcela ${parcela.parcela}/${parcela.totalParcelas} vencida`);
+  const referenteA = numeroProcesso
+    ? `da parcela ${parcela.parcela}/${parcela.totalParcelas} dos honorários advocatícios contratados, referente ao processo nº ${numeroProcesso}`
+    : `da parcela ${parcela.parcela}/${parcela.totalParcelas} dos honorários advocatícios contratados`;
+  const [corpo,setCorpo] = useState(
+`Prezado(a) ${cliente?.nome || parcela.cliente || "(cliente)"},
+
+Verificamos que o pagamento ${referenteA}, no valor de ${fmtBRL(parcela.valor)}, com vencimento em ${fmtData(parcela.vencimento)}, ainda consta em aberto${dias<0?` (${Math.abs(dias)} dia(s) em atraso)`:""}.
+
+Solicitamos gentilmente a regularização o quanto antes. Segue a chave PIX para pagamento:
+
+Chave PIX (CPF): ${PIX_RECEBIMENTO}
+
+Após a confirmação do pagamento, pedimos a gentileza de nos enviar o comprovante para que possamos dar baixa e emitir o recibo.
+
+Qualquer dúvida, estamos à disposição.
+
+Atenciosamente,
+Michelli Abreu Advocacia`
+  );
+  const abrirGmail = () => {
+    const to = encodeURIComponent(cliente?.email || "");
+    window.open(`https://mail.google.com/mail/?view=cm&to=${to}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`,"_blank");
+  };
+  const abrirWhatsapp = () => {
+    const texto = `${assunto}\n\n${corpo}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`,"_blank");
+  };
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:520,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:"#fff",width:540,maxWidth:"100%",maxHeight:"90vh",overflow:"auto",borderRadius:8,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.2)"}}>
+        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 14px",fontWeight:600}}>Cobrar parcela vencida</p>
+        {!cliente?.email && <div style={{background:"var(--amber-bg)",border:"1px solid #F5CE85",borderRadius:5,padding:"8px 12px",marginBottom:12,fontSize:11.5,color:"var(--amber)"}}>⚠ Cliente sem e-mail cadastrado no CRM — o envio por WhatsApp continua disponível.</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div><span style={lbl}>Assunto</span><input value={assunto} onChange={e=>setAssunto(e.target.value)} style={inp}/></div>
+          <div><span style={lbl}>Mensagem</span><textarea value={corpo} onChange={e=>setCorpo(e.target.value)} style={{...inp,minHeight:260,resize:"vertical",fontSize:12,lineHeight:1.5}}/></div>
         </div>
         <div style={{marginTop:18,display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={onClose} style={btnSec}>Fechar</button>
@@ -2365,7 +2491,7 @@ Use string vazia em qualquer campo que não puder ser determinado com segurança
 
 // ── Modal Form Cliente (CRM) ──────────────────────────────
 function ModalFormCliente({cliente,onSave,onClose}){
-  const e0={nome:"",cpf:"",email:"",telefone:"",endereco:"",profissao:"",estadoCivil:"",nacionalidade:"brasileiro(a)",rg:"",obs:""};
+  const e0={nome:"",cpf:"",email:"",telefone:"",endereco:"",profissao:"",estadoCivil:"",nacionalidade:"brasileiro(a)",sexo:"",rg:"",obs:""};
   const [f,setF]=useState(cliente||e0);
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
   return (
@@ -2389,8 +2515,15 @@ function ModalFormCliente({cliente,onSave,onClose}){
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div><span style={lbl}>Nacionalidade</span><input value={f.nacionalidade||""} onChange={e=>s("nacionalidade",e.target.value)} style={inp}/></div>
-            <div><span style={lbl}>Telefone</span><input value={f.telefone} onChange={e=>s("telefone",fmtTelefone(e.target.value))} style={inp} placeholder="(00) 00000-0000"/></div>
+            <div><span style={lbl}>Sexo <span style={{color:"var(--text3)",fontWeight:400,textTransform:"none"}}>(concordância nos documentos)</span></span>
+              <select value={f.sexo||""} onChange={e=>s("sexo",e.target.value)} style={{...inp,padding:"7px 8px"}}>
+                <option value="">Não informado</option>
+                <option value="F">Feminino</option>
+                <option value="M">Masculino</option>
+              </select>
+            </div>
           </div>
+          <div><span style={lbl}>Telefone</span><input value={f.telefone} onChange={e=>s("telefone",fmtTelefone(e.target.value))} style={inp} placeholder="(00) 00000-0000"/></div>
           <div><span style={lbl}>E-mail</span><input type="email" value={f.email} onChange={e=>s("email",e.target.value)} style={inp} placeholder="cliente@email.com"/></div>
           <div><span style={lbl}>Endereço</span><input value={f.endereco} onChange={e=>s("endereco",e.target.value)} style={inp} placeholder="Endereço completo"/></div>
           <div><span style={lbl}>Observações</span><textarea value={f.obs} onChange={e=>s("obs",e.target.value)} style={{...inp,minHeight:70,resize:"vertical"}} placeholder="Notas internas sobre o cliente…"/></div>
@@ -4632,6 +4765,16 @@ function PaginaClientes({clientes, setClientes, processos, onAbrirProcesso, clie
     setGerandoDoc(null);
   };
 
+  const gerarHipossuficiencia = async (c) => {
+    setErroDoc(""); setGerandoDoc("hipossuficiencia");
+    try {
+      await gerarDeclaracaoHipossuficienciaParaCliente(c);
+    } catch(e) {
+      setErroDoc(e.message || "Não foi possível gerar a declaração.");
+    }
+    setGerandoDoc(null);
+  };
+
   const TIPOS_DOCUMENTO_CLIENTE = ["RG","CPF","Comprovante de Residência","Procuração assinada","Contrato assinado","Outro"];
 
   const anexarDocumentoCliente = async (e, clienteId) => {
@@ -4808,7 +4951,16 @@ Use string vazia em qualquer campo que não aparecer claramente no documento. Nu
                   <div><span style={lbl}>Nacionalidade</span><input value={formEdicao.nacionalidade||""} onChange={e=>setFormEdicao(x=>({...x,nacionalidade:e.target.value}))} style={inp}/></div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div><span style={lbl}>Sexo <span style={{color:"var(--text3)",fontWeight:400,textTransform:"none"}}>(concordância nos documentos)</span></span>
+                    <select value={formEdicao.sexo||""} onChange={e=>setFormEdicao(x=>({...x,sexo:e.target.value}))} style={{...inp,padding:"7px 8px"}}>
+                      <option value="">Não informado</option>
+                      <option value="F">Feminino</option>
+                      <option value="M">Masculino</option>
+                    </select>
+                  </div>
                   <div><span style={lbl}>Telefone</span><input value={formEdicao.telefone||""} onChange={e=>setFormEdicao(x=>({...x,telefone:fmtTelefone(e.target.value)}))} style={inp}/></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <div><span style={lbl}>E-mail</span><input type="email" value={formEdicao.email||""} onChange={e=>setFormEdicao(x=>({...x,email:e.target.value}))} style={inp}/></div>
                 </div>
                 <div><span style={lbl}>Endereço</span><input value={formEdicao.endereco||""} onChange={e=>setFormEdicao(x=>({...x,endereco:e.target.value}))} style={inp}/></div>
@@ -4829,7 +4981,7 @@ Use string vazia em qualquer campo que não aparecer claramente no documento. Nu
                   <button onClick={()=>{setFormEdicao(selecionado);setEditandoCliente(true);}} style={{...btnSec,fontSize:11,padding:"5px 12px"}}>✎ Editar cadastro</button>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 20px",marginBottom:16}}>
-                  {[["RG",selecionado.rg||"—"],["Profissão",selecionado.profissao||"—"],["Estado civil",selecionado.estadoCivil||"—"],["Nacionalidade",selecionado.nacionalidade||"—"],["E-mail",selecionado.email||"—"],["Telefone",selecionado.telefone||"—"],["Endereço",selecionado.endereco||"—"]].map(([k,v])=>(
+                  {[["RG",selecionado.rg||"—"],["Profissão",selecionado.profissao||"—"],["Estado civil",selecionado.estadoCivil||"—"],["Nacionalidade",selecionado.nacionalidade||"—"],["Sexo",selecionado.sexo==="F"?"Feminino":selecionado.sexo==="M"?"Masculino":"—"],["E-mail",selecionado.email||"—"],["Telefone",selecionado.telefone||"—"],["Endereço",selecionado.endereco||"—"]].map(([k,v])=>(
                     <div key={k}><p style={{fontSize:10,textTransform:"uppercase",letterSpacing:".6px",color:"var(--text2)",margin:"0 0 3px",fontWeight:600}}>{k}</p><p style={{fontSize:13,margin:0}}>{v}</p></div>
                   ))}
                 </div>
@@ -4867,6 +5019,7 @@ Use string vazia em qualquer campo que não aparecer claramente no documento. Nu
               <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
                 <button onClick={()=>gerarProcuracao(selecionado)} disabled={gerandoDoc==="procuracao"} style={{...btnSec,fontSize:11,padding:"6px 12px",opacity:gerandoDoc==="procuracao"?.6:1}}>{gerandoDoc==="procuracao"?"Gerando…":"📄 Gerar procuração (Word)"}</button>
                 <button onClick={()=>setAbrindoContrato(true)} style={{...btnSec,fontSize:11,padding:"6px 12px"}}>📄 Gerar contrato de honorários</button>
+                <button onClick={()=>gerarHipossuficiencia(selecionado)} disabled={gerandoDoc==="hipossuficiencia"} style={{...btnSec,fontSize:11,padding:"6px 12px",opacity:gerandoDoc==="hipossuficiencia"?.6:1}}>{gerandoDoc==="hipossuficiencia"?"Gerando…":"📄 Gerar declaração de hipossuficiência"}</button>
               </div>
               {erroDoc && <p style={{fontSize:11,color:"var(--red)",marginTop:8}}>{erroDoc}</p>}
             </div>
@@ -5031,6 +5184,41 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
   const saldoLiquidoMes = totalRecebido - totalDespesasPagas;
   const lista=useMemo(()=>{const q=filtroCli.toLowerCase();return parcelasDoMes.filter(p=>{const st=statusParcela(p);return(!q||p.cliente.toLowerCase().includes(q))&&(filtroSt==="todos"||st===filtroSt);}).sort((a,b)=>new Date(a.vencimento)-new Date(b.vencimento));},[parcelasDoMes,filtroCli,filtroSt]);
   const marcarPago=id=>setParcelas(ps=>ps.map(p=>p.id===id?{...p,pago:!p.pago}:p));
+
+  // Descobre o cliente de verdade (com e-mail) a partir da parcela: primeiro
+  // tenta pelo processo vinculado, senão tenta bater o nome com o CRM.
+  const resolverClienteDaParcela = (p) => {
+    if(p.procId){
+      const proc = processos.find(x=>x.id===p.procId);
+      if(proc?.clienteId){ const c = (clientes||[]).find(x=>x.id===proc.clienteId); if(c) return c; }
+    }
+    return (clientes||[]).find(x=>(x.nome||"").trim().toLowerCase()===(p.cliente||"").trim().toLowerCase()) || null;
+  };
+  const [cobrandoParcela,setCobrandoParcela] = useState(null); // {cliente, parcela, numeroProcesso}
+  const abrirCobranca = (p) => {
+    const cliente = resolverClienteDaParcela(p);
+    const proc = p.procId ? processos.find(x=>x.id===p.procId) : null;
+    setCobrandoParcela({cliente, parcela:p, numeroProcesso: proc?.numero || null});
+  };
+  const [gerandoReciboId,setGerandoReciboId] = useState(null);
+  const [enviandoRecibo,setEnviandoRecibo] = useState(null); // {cliente, parcela}
+  const [erroRecibo,setErroRecibo] = useState("");
+  const gerarRecibo = async (p) => {
+    setErroRecibo(""); setGerandoReciboId(p.id);
+    const cliente = resolverClienteDaParcela(p);
+    if(!cliente){ setErroRecibo("Não foi possível identificar o cliente desta parcela no CRM — cadastre-o para gerar o recibo com a qualificação completa."); setGerandoReciboId(null); return; }
+    const proc = p.procId ? processos.find(x=>x.id===p.procId) : null;
+    try {
+      await gerarReciboParaCliente(cliente, {
+        valor: p.valor, parcela: p.parcela, totalParcelas: p.totalParcelas,
+        dataPagamento: hoje.toISOString().slice(0,10), numeroProcesso: proc?.numero || null,
+      });
+      setEnviandoRecibo({cliente, parcela:p, qualificacao: montarQualificacaoCliente(cliente), numeroProcesso: proc?.numero || null});
+    } catch(e) {
+      setErroRecibo(e.message || "Não foi possível gerar o recibo.");
+    }
+    setGerandoReciboId(null);
+  };
   const vencendoHoje=parcelas.filter(p=>!p.pago&&diasRest(p.vencimento)>=0&&diasRest(p.vencimento)<=7);
   const procNum=id=>id?(processos.find(p=>p.id===id)?.numero?.slice(0,22)+"…"||`Proc. ${id}`):"Sem processo vinculado";
   const hdr={fontSize:10,textTransform:"uppercase",letterSpacing:".6px",color:"var(--text2)",fontWeight:700};
@@ -5131,7 +5319,11 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
             <div style={{fontSize:13,fontWeight:700}}>{fmtBRL(p.valor)}</div>
             <div style={{fontSize:12}}>{fmtData(p.vencimento)}</div>
             <div><Pill bg={cfg.bg} color={cfg.color} label={cfg.label} sm/></div>
-            <div><button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${p.pago?"#ccc":"var(--navy2)"}`,background:p.pago?"var(--bg2)":"var(--navy2)",color:p.pago?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{p.pago?"Desfazer":"Pagar"}</button></div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${p.pago?"#ccc":"var(--navy2)"}`,background:p.pago?"var(--bg2)":"var(--navy2)",color:p.pago?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{p.pago?"Desfazer":"Pagar"}</button>
+              {p.pago && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
+              {!p.pago && st==="vencido" && <button onClick={()=>abrirCobranca(p)} title="Enviar cobrança com PIX" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
+            </div>
             <button onClick={()=>excluirUm(p.id)} title="Excluir parcela" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:0,lineHeight:1}}>🗑</button>
           </div>
         );})}
@@ -5191,6 +5383,9 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
       {(editandoDespesa||novaDespesa)&&<ModalFormDespesa despesa={editandoDespesa} onSave={salvarDespesa} onClose={()=>{setEditandoDespesa(null);setNovaDespesa(false);}}/>}
       </>
       )}
+      {erroRecibo && <p style={{fontSize:12,color:"var(--red)",marginTop:10}}>{erroRecibo}</p>}
+      {enviandoRecibo && <ModalEnviarRecibo cliente={enviandoRecibo.cliente} parcela={enviandoRecibo.parcela} qualificacao={enviandoRecibo.qualificacao} numeroProcesso={enviandoRecibo.numeroProcesso} onClose={()=>setEnviandoRecibo(null)}/>}
+      {cobrandoParcela && <ModalCobrarParcela cliente={cobrandoParcela.cliente} parcela={cobrandoParcela.parcela} numeroProcesso={cobrandoParcela.numeroProcesso} onClose={()=>setCobrandoParcela(null)}/>}
     </div>
   );
 }
@@ -5506,6 +5701,7 @@ async function buscarPublicacoesDJEN({oabNumero, oabUf, dias, intimacoesAtuais, 
         texto: it.texto,
         dataDisponibilizacao: it.dataDisponibilizacao,
         procId: procEncontrado ? procEncontrado.id : null,
+        numeroProcesso: it.numeroProcesso || null,
         lida: false,
         arquivada: false,
         djenId: it.djenId,
@@ -5555,6 +5751,10 @@ Use string vazia quando não identificar o dado com segurança. "parteClienteEhA
       const txt = data.content?.find(b=>b.type==="text")?.text || "";
       if(!txt) throw new Error("A IA retornou uma resposta vazia.");
       const parsed = JSON.parse(txt.replace(/```json|```/g,"").trim());
+      // O número que vem estruturado do DJEN é mais confiável que o que a IA
+      // extrai do texto corrido (que pode estar mascarado/incompleto em
+      // publicações de processos sob sigilo) — prevalece quando disponível.
+      if(intimacao.numeroProcesso) parsed.numero = intimacao.numeroProcesso;
       setDadosCadastro(parsed);
     } catch(e) {
       setErroCadastro(e.message || "Não foi possível analisar a publicação.");
@@ -5739,6 +5939,7 @@ Use string vazia quando não identificar o dado com segurança. "parteClienteEhA
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,gap:10}}>
                   <div>
                     <p style={{fontSize:12,fontWeight:700,margin:"0 0 2px",color:"var(--navy)"}}>{i.orgao||"Tribunal"}</p>
+                    <p style={{fontSize:11,fontFamily:"monospace",color:proc?"var(--navy2)":(i.numeroProcesso?"var(--text2)":"var(--text3)"),margin:"0 0 2px"}}>{proc ? proc.numero : (i.numeroProcesso || "Nº do processo não informado pelo DJEN")}</p>
                     <p style={{fontSize:10.5,color:"var(--text2)",margin:0}}>{fmtData(i.dataDisponibilizacao)}</p>
                   </div>
                   {!i.lida&&<Pill bg="var(--accent-light)" color="var(--accent)" label="Não lida" sm/>}
@@ -5992,18 +6193,30 @@ async function extrairTextoPDFDeBase64(base64){
 // Monta a qualificação completa de um cliente a partir dos dados já salvos no cadastro
 // (nome, nacionalidade, estado civil, profissão, RG, CPF, endereço, e-mail) — usada tanto
 // na tela de Clientes quanto na geração de procuração e contrato.
+// Conjuga automaticamente expressões escritas no padrão "neutro" com sufixo
+// entre parênteses (ex: "portador(a)", "Solteiro(a)", "brasileiro(a)") de
+// acordo com o sexo do cliente. Sem sexo definido, mantém como estava
+// (com o sufixo entre parênteses), pra nunca supor errado.
+function conjugarGenero(texto, sexo){
+  if(!texto) return texto;
+  if(sexo!=="F" && sexo!=="M") return texto;
+  return texto
+    .replace(/(\w*?)o\(a\)/g, (m, base) => sexo==="F" ? base+"a" : base+"o")
+    .replace(/(\w+)\(a\)/g, (m, base) => sexo==="F" ? base+"a" : base);
+}
+
 function montarQualificacaoCliente(c){
   const partes = [];
   partes.push(c.nome ? c.nome.toUpperCase() : "[NOME]");
-  if(c.nacionalidade) partes.push(c.nacionalidade.toLowerCase());
-  if(c.estadoCivil) partes.push(c.estadoCivil.toLowerCase());
+  if(c.nacionalidade) partes.push(conjugarGenero(c.nacionalidade.toLowerCase(), c.sexo));
+  if(c.estadoCivil) partes.push(conjugarGenero(c.estadoCivil.toLowerCase(), c.sexo));
   if(c.profissao) partes.push(c.profissao.toLowerCase());
   let texto = partes.join(", ");
   const docs = [];
-  if(c.rg) docs.push(`portador(a) da cédula de identidade RG nº ${c.rg}`);
-  if(c.cpf) docs.push(`inscrito(a) no CPF sob o nº ${c.cpf}`);
+  if(c.rg) docs.push(`${conjugarGenero("portador(a)", c.sexo)} da cédula de identidade RG nº ${c.rg}`);
+  if(c.cpf) docs.push(`${conjugarGenero("inscrito(a)", c.sexo)} no CPF sob o nº ${c.cpf}`);
   if(docs.length) texto += ", " + docs.join(", ");
-  if(c.endereco) texto += `, residente e domiciliado(a) em ${c.endereco}`;
+  if(c.endereco) texto += `, ${conjugarGenero("residente e domiciliado(a)", c.sexo)} em ${c.endereco}`;
   if(c.email) texto += `, e-mail: ${c.email}`;
   texto += ".";
   return texto;
@@ -6017,16 +6230,33 @@ const nomeArquivoSeguro = (nome) => (nome||"documento").normalize("NFD").replace
 // procuração sai só com os poderes gerais.
 async function gerarProcuracaoParaCliente(cliente, finalidadeEspecifica){
   const qualificacao = montarQualificacaoCliente(cliente);
+  const artigoOutorgante = cliente.sexo==="F" ? "da" : cliente.sexo==="M" ? "do" : "da(o)";
   const finalidade = (finalidadeEspecifica && finalidadeEspecifica.trim())
     ? ` em especial ${finalidadeEspecifica.trim()},`
     : "";
   const conteudo = [
     "#TITULO#Procuração",
-    `Por este instrumento particular de mandato, ${qualificacao} nomeia e constitui sua bastante procuradora a advogada MICHELLI COSTA DE ABREU MARINHO, inscrita na OAB/RJ sob o nº 155.134, e GUSTAVO MARINHO MACHADO, inscrito na OAB/RJ sob o nº 141.149, com escritório na Rua Doutor Pereira dos Santos, nº 107, Sala 701, Centro, Itaboraí/RJ, CEP 24800-041, aos quais confere e outorga plenos poderes para defender os interesses da(o) Outorgante, com todos os poderes para o foro geral compreendidos na cláusula *ad judicia et extra*,${finalidade} podendo para tanto apresentar petições, recursos e defesas, requerer certidões e assinar o que necessário for, conciliar, desistir, renunciar, transigir, receber e dar quitação, podendo inclusive substabelecer, com ou sem reserva, os poderes que lhes são conferidos e, finalmente, praticar todos os demais atos necessários ao fiel cumprimento deste mandato.`,
+    `Por este instrumento particular de mandato, ${qualificacao} nomeia e constitui sua bastante procuradora a advogada MICHELLI COSTA DE ABREU MARINHO, inscrita na OAB/RJ sob o nº 155.134, e GUSTAVO MARINHO MACHADO, inscrito na OAB/RJ sob o nº 141.149, com escritório na Rua Doutor Pereira dos Santos, nº 107, Sala 701, Centro, Itaboraí/RJ, CEP 24800-041, aos quais confere e outorga plenos poderes para defender os interesses ${artigoOutorgante} Outorgante, com todos os poderes para o foro geral compreendidos na cláusula *ad judicia et extra*,${finalidade} podendo para tanto apresentar petições, recursos e defesas, requerer certidões e assinar o que necessário for, conciliar, desistir, renunciar, transigir, receber e dar quitação, podendo inclusive substabelecer, com ou sem reserva, os poderes que lhes são conferidos e, finalmente, praticar todos os demais atos necessários ao fiel cumprimento deste mandato.`,
     `#CENTRO#Itaboraí, ${hoje.toLocaleDateString("pt-BR",{day:"2-digit",month:"long",year:"numeric"})}.`,
     `#ASSINATURA_CENTRO#${(cliente.nome||"").toUpperCase()}`,
   ].join("\n");
   await gerarDocumentoTimbrado("Procuracao_"+nomeArquivoSeguro(cliente.nome), conteudo);
+}
+
+// Gera a declaração de hipossuficiência econômica em Word (com timbrado), para
+// requerer os benefícios da gratuidade de justiça (art. 98 e seguintes do CPC
+// e Lei nº 1.060/50). Usa os dados já salvos no cadastro do cliente.
+async function gerarDeclaracaoHipossuficienciaParaCliente(cliente){
+  const qualificacao = montarQualificacaoCliente(cliente);
+  const conteudo = [
+    "#TITULO#Declaração de Hipossuficiência",
+    `${qualificacao} declara, sob as penas da lei, que não possui condições financeiras de arcar com as custas processuais, despesas cartorárias e honorários advocatícios sem prejuízo do próprio sustento e/ou de sua família, razão pela qual requer, com fundamento no art. 98 e seguintes do Código de Processo Civil e na Lei nº 1.060/50, a concessão dos benefícios da gratuidade de justiça.`,
+    `Declara, ainda, estar ciente de que a presente declaração tem presunção de veracidade, e que a prestação de informação falsa constitui crime previsto no art. 299 do Código Penal (falsidade ideológica), sujeitando-se às penas ali cominadas, sem prejuízo das demais sanções cabíveis, inclusive de natureza processual.`,
+    "Por ser expressão da verdade, firma a presente declaração.",
+    `#CENTRO#Itaboraí, ${hoje.toLocaleDateString("pt-BR",{day:"2-digit",month:"long",year:"numeric"})}.`,
+    `#ASSINATURA_CENTRO#${(cliente.nome||"").toUpperCase()}`,
+  ].join("\n");
+  await gerarDocumentoTimbrado("Declaracao_Hipossuficiencia_"+nomeArquivoSeguro(cliente.nome), conteudo);
 }
 
 // Gera o contrato de honorários advocatícios em Word (com timbrado), usando os dados já
