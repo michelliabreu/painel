@@ -2548,7 +2548,7 @@ function ModalFormCliente({cliente,onSave,onClose}){
   );
 }
 let _pid=100;
-const mkParcelas=(procId,cliente,total,n,inicio)=>Array.from({length:n},(_,i)=>{const d=new Date(inicio+"T00:00:00");d.setMonth(d.getMonth()+i);const yy=d.getFullYear(),mm=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return{id:_pid++,procId,cliente,totalContrato:total,parcela:i+1,totalParcelas:n,valor:parseFloat((total/n).toFixed(2)),vencimento:`${yy}-${mm}-${dd}`,pago:i<2};});
+const mkParcelas=(procId,cliente,total,n,inicio)=>Array.from({length:n},(_,i)=>{const d=new Date(inicio+"T00:00:00");d.setMonth(d.getMonth()+i);const yy=d.getFullYear(),mm=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return{id:_pid++,procId,cliente,totalContrato:total,parcela:i+1,totalParcelas:n,valor:parseFloat((total/n).toFixed(2)),vencimento:`${yy}-${mm}-${dd}`,pago:false};});
 
 function ModalAcordo({processos,clientes,onSave,onClose}){
   const [buscaCliente,setBuscaCliente]=useState("");
@@ -5376,7 +5376,8 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
                   {p.pago && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
                   {!p.pago && st==="vencido" && <button onClick={()=>abrirCobranca(p,"vencida")} title="Cobrar parcela vencida" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
                   {!p.pago && st!=="vencido" && <button onClick={()=>abrirCobranca(p,"lembrete")} title="Enviar lembrete de vencimento" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text2)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
-                  <button onClick={()=>excluirUm(p.id)} title="Excluir parcela" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:0,lineHeight:1,marginLeft:2}}>🗑</button>
+                  <span style={{width:1,height:18,background:"var(--border1)",margin:"0 2px"}}/>
+                  <button onClick={()=>excluirUm(p.id)} title="Excluir parcela" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:"0 4px",lineHeight:1}}>🗑</button>
                 </div>
               </div>
             );})}
