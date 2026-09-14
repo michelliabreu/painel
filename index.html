@@ -5194,6 +5194,34 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
   const totalVencido=parcelasDoMes.filter(p=>statusParcela(p)==="vencido").reduce((a,p)=>a+p.valor,0);
   const saldoLiquidoMes = totalRecebido - totalDespesasPagas;
   const lista=useMemo(()=>{const q=filtroCli.toLowerCase();return parcelasDoMes.filter(p=>{const st=statusParcela(p);return(!q||p.cliente.toLowerCase().includes(q))&&(filtroSt==="todos"||st===filtroSt);}).sort((a,b)=>new Date(a.vencimento)-new Date(b.vencimento));},[parcelasDoMes,filtroCli,filtroSt]);
+
+  // Agrupa TODAS as parcelas (sem depender do mês selecionado) por urgência,
+  // no mesmo espírito da tela de Prazos e Tarefas: dá pra ver numa tela só o
+  // que está atrasado, o que vence este mês e o que vem depois.
+  const gruposParcelas = useMemo(()=>{
+    const q = filtroCli.toLowerCase();
+    const filtradas = (parcelas||[]).filter(p=>!q||(p.cliente||"").toLowerCase().includes(q));
+    const mesAtualStr = hoje.toISOString().slice(0,7);
+    const atrasadas=[], esteMes=[], proximosMeses=[], pagas=[];
+    filtradas.forEach(p=>{
+      if(p.pago){ pagas.push(p); return; }
+      if(statusParcela(p)==="vencido"){ atrasadas.push(p); return; }
+      const mesParcela = (p.vencimento||"").slice(0,7);
+      (mesParcela===mesAtualStr ? esteMes : proximosMeses).push(p);
+    });
+    const porVencimentoAsc = (a,b)=>new Date(a.vencimento)-new Date(b.vencimento);
+    atrasadas.sort(porVencimentoAsc); esteMes.sort(porVencimentoAsc); proximosMeses.sort(porVencimentoAsc);
+    pagas.sort((a,b)=>new Date(b.vencimento)-new Date(a.vencimento));
+    return [
+      {chave:"atrasadas", label:"Atrasadas", cor:"var(--red)", itens:atrasadas},
+      {chave:"este_mes", label:"A vencer este mês", cor:"var(--amber)", itens:esteMes},
+      {chave:"proximos", label:"Próximos meses", cor:"var(--navy2)", itens:proximosMeses},
+      {chave:"pagas", label:"Pagas recentemente", cor:"var(--green)", itens:pagas.slice(0,15), totalOculto:Math.max(0,pagas.length-15)},
+    ].filter(g=>g.itens.length>0);
+  },[parcelas,filtroCli]);
+  const totalAtrasado = gruposParcelas.find(g=>g.chave==="atrasadas")?.itens.reduce((s,p)=>s+p.valor,0) || 0;
+  const totalEsteMes = gruposParcelas.find(g=>g.chave==="este_mes")?.itens.reduce((s,p)=>s+p.valor,0) || 0;
+  const totalProximosMeses = gruposParcelas.find(g=>g.chave==="proximos")?.itens.reduce((s,p)=>s+p.valor,0) || 0;
   const marcarPago=id=>setParcelas(ps=>ps.map(p=>p.id===id?{...p,pago:!p.pago}:p));
 
   // Descobre o cliente de verdade (com e-mail) a partir da parcela: primeiro
@@ -5232,7 +5260,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
   const vencendoHoje=parcelas.filter(p=>!p.pago&&diasRest(p.vencimento)>=0&&diasRest(p.vencimento)<=7);
   const procNum=id=>id?(processos.find(p=>p.id===id)?.numero?.slice(0,22)+"…"||`Proc. ${id}`):"Sem processo vinculado";
   const hdr={fontSize:10,textTransform:"uppercase",letterSpacing:".6px",color:"var(--text2)",fontWeight:700};
-  const idsVisiveis = lista.map(p=>p.id);
+  const idsVisiveis = gruposParcelas.flatMap(g=>g.itens.map(p=>p.id));
   const qtdSelecionados = idsVisiveis.filter(id=>selecionados[id]).length;
   const todosSelecionados = idsVisiveis.length>0 && qtdSelecionados===idsVisiveis.length;
   const algumSelecionado = qtdSelecionados>0;
@@ -5295,14 +5323,13 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
       <>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
         <KpiCard label="Total contratado (geral)" value={fmtBRL(totalContrato)} color="var(--navy)" icon="📄"/>
-        <KpiCard label={mesAtivo==="todos"?"Total recebido":"Recebido no mês"} value={fmtBRL(totalRecebido)} color="var(--green)" icon="✓"/>
-        <KpiCard label={mesAtivo==="todos"?"Em aberto":"Em aberto no mês"} value={fmtBRL(totalAberto)} color="var(--accent)" icon="⏳"/>
-        <KpiCard label="Vencido" value={fmtBRL(totalVencido)} color="var(--red)" icon="⚠"/>
-        <KpiCard label="Saldo líquido do mês" value={fmtBRL(saldoLiquidoMes)} sub="recebido − despesas pagas" color={saldoLiquidoMes>=0?"var(--green)":"var(--red)"} icon="⚖"/>
+        <KpiCard label="Atrasado" value={fmtBRL(totalAtrasado)} color="var(--red)" icon="⚠"/>
+        <KpiCard label="A vencer este mês" value={fmtBRL(totalEsteMes)} color="var(--amber)" icon="⏳"/>
+        <KpiCard label="Próximos meses" value={fmtBRL(totalProximosMeses)} color="var(--navy2)" icon="🗓"/>
+        <KpiCard label={mesAtivo==="todos"?"Total recebido":"Recebido no mês"} value={fmtBRL(totalRecebido)} sub={mesAtivo==="todos"?"":"use as setas acima para mudar o mês"} color="var(--green)" icon="✓"/>
       </div>
       {vencendoHoje.length>0&&<div style={{background:"var(--amber-bg)",borderLeft:"3px solid var(--amber)",borderRadius:6,padding:"10px 14px",marginBottom:14,fontSize:12,color:"var(--amber)"}}><strong style={{textTransform:"uppercase",letterSpacing:".5px",marginRight:8}}>Parcelas a vencer em até 7 dias:</strong>{vencendoHoje.map(p=><span key={p.id} style={{marginRight:12}}>{p.cliente} — parcela {p.parcela}/{p.totalParcelas} ({fmtData(p.vencimento)})</span>)}</div>}
-      <div style={{background:"#fff",border:"1px solid var(--border1)",borderRadius:8,padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}>
-        <div style={{display:"flex",gap:0}}>{[["todos","Todos"],["pendente","Pendente"],["aVencer","A vencer"],["vencido","Vencido"],["pago","Pago"]].map(([v,l])=><button key={v} onClick={()=>setFiltroSt(v)} style={{background:"none",border:"none",borderBottom:filtroSt===v?"2px solid var(--navy2)":"2px solid transparent",color:filtroSt===v?"var(--navy2)":"var(--text2)",padding:"5px 12px 7px",fontSize:11,fontWeight:filtroSt===v?700:500,cursor:"pointer",textTransform:"uppercase",letterSpacing:".5px"}}>{l}</button>)}</div>
+      <div style={{background:"#fff",border:"1px solid var(--border1)",borderRadius:8,padding:"8px 14px",display:"flex",justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}>
         <input placeholder="Buscar cliente…" value={filtroCli} onChange={e=>setFiltroCli(e.target.value)} style={{fontSize:12,padding:"6px 11px",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text1)",width:200}}/>
       </div>
       {algumSelecionado && (
@@ -5316,29 +5343,47 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
           </div>
         </div>
       )}
-      <div style={{background:"#fff",border:"1px solid var(--border1)",borderRadius:8,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"34px 2fr 1.2fr .8fr .9fr .9fr .8fr 40px",padding:"9px 14px",background:"var(--bg2)",borderBottom:"1px solid var(--border1)",alignItems:"center"}}>
-          <input type="checkbox" checked={todosSelecionados} onChange={toggleTodos} style={{width:15,height:15,cursor:"pointer"}}/>
-          {["Processo / Cliente","Parcela","Valor","Vencimento","Status",""].map(h=><span key={h} style={hdr}>{h}</span>)}
-        </div>
-        {lista.length===0?<div style={{padding:"2.5rem",textAlign:"center",color:"var(--text2)",fontSize:13}}>Nenhuma parcela encontrada.</div>:lista.map((p,i)=>{const st=statusParcela(p),cfg=PC[st];return(
-          <div key={p.id} style={{display:"grid",gridTemplateColumns:"34px 2fr 1.2fr .8fr .9fr .9fr .8fr 40px",padding:"11px 14px",alignItems:"center",borderBottom:i<lista.length-1?"1px solid var(--border1)":"none",background:selecionados[p.id]?"var(--accent-light)":st==="vencido"?"rgba(185,28,28,.03)":st==="aVencer"?"rgba(180,83,9,.04)":"transparent"}}>
-            <input type="checkbox" checked={!!selecionados[p.id]} onChange={()=>toggleUm(p.id)} style={{width:15,height:15,cursor:"pointer"}}/>
-            <div><p style={{fontSize:11,fontFamily:p.procId?"monospace":"inherit",fontStyle:p.procId?"normal":"italic",color:"var(--text2)",margin:"0 0 2px"}}>{procNum(p.procId)}</p><p style={{fontSize:13,fontWeight:600,margin:0}}>{p.cliente}</p></div>
-            <div style={{fontSize:12,color:"var(--text2)"}}>{p.parcela} / {p.totalParcelas}</div>
-            <div style={{fontSize:13,fontWeight:700}}>{fmtBRL(p.valor)}</div>
-            <div style={{fontSize:12}}>{fmtData(p.vencimento)}</div>
-            <div><Pill bg={cfg.bg} color={cfg.color} label={cfg.label} sm/></div>
-            <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${p.pago?"#ccc":"var(--navy2)"}`,background:p.pago?"var(--bg2)":"var(--navy2)",color:p.pago?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{p.pago?"Desfazer":"Pagar"}</button>
-              {p.pago && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
-              {!p.pago && st==="vencido" && <button onClick={()=>abrirCobranca(p,"vencida")} title="Cobrar parcela vencida" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
-              {!p.pago && st!=="vencido" && <button onClick={()=>abrirCobranca(p,"lembrete")} title="Enviar lembrete de vencimento" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text2)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
-            </div>
-            <button onClick={()=>excluirUm(p.id)} title="Excluir parcela" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:0,lineHeight:1}}>🗑</button>
+      {gruposParcelas.length===0 ? (
+        <div style={{background:"#fff",border:"1px solid var(--border1)",borderRadius:8,padding:"2.5rem",textAlign:"center",color:"var(--text2)",fontSize:13}}>Nenhuma parcela encontrada.</div>
+      ) : gruposParcelas.map(grupo=>(
+        <div key={grupo.chave} style={{marginBottom:22}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:9,marginBottom:8,paddingBottom:7,borderBottom:"1.5px solid var(--text1)"}}>
+            <span style={{fontSize:13,fontWeight:800,color:grupo.cor,letterSpacing:".2px"}}>{grupo.label}</span>
+            <span style={{fontSize:11,color:"var(--text3)"}}>{grupo.itens.length}</span>
           </div>
-        );})}
-      </div>
+          <div style={{background:"#fff",border:"1px solid var(--border1)",borderRadius:8,overflow:"hidden",opacity:grupo.chave==="pagas"?0.75:1}}>
+            <div style={{display:"grid",gridTemplateColumns:"34px 2fr 1.2fr .8fr .9fr .9fr .8fr 40px",padding:"9px 14px",background:"var(--bg2)",borderBottom:"1px solid var(--border1)",alignItems:"center"}}>
+              <input type="checkbox" checked={grupo.itens.length>0 && grupo.itens.every(p=>selecionados[p.id])} onChange={()=>{
+                const todosDoGrupo = grupo.itens.every(p=>selecionados[p.id]);
+                setSelecionados(s=>{
+                  const novo={...s};
+                  grupo.itens.forEach(p=>{ if(todosDoGrupo) delete novo[p.id]; else novo[p.id]=true; });
+                  return novo;
+                });
+              }} style={{width:15,height:15,cursor:"pointer"}}/>
+              {["Processo / Cliente","Parcela","Valor","Vencimento","Status",""].map(h=><span key={h} style={hdr}>{h}</span>)}
+            </div>
+            {grupo.itens.map((p,i)=>{const st=statusParcela(p),cfg=PC[st];return(
+              <div key={p.id} style={{display:"grid",gridTemplateColumns:"34px 2fr 1.2fr .8fr .9fr .9fr .8fr 40px",padding:"11px 14px",alignItems:"center",borderBottom:i<grupo.itens.length-1?"1px solid var(--border1)":"none",background:selecionados[p.id]?"var(--accent-light)":"transparent"}}>
+                <input type="checkbox" checked={!!selecionados[p.id]} onChange={()=>toggleUm(p.id)} style={{width:15,height:15,cursor:"pointer"}}/>
+                <div><p style={{fontSize:11,fontFamily:p.procId?"monospace":"inherit",fontStyle:p.procId?"normal":"italic",color:"var(--text2)",margin:"0 0 2px"}}>{procNum(p.procId)}</p><p style={{fontSize:13,fontWeight:600,margin:0}}>{p.cliente}</p></div>
+                <div style={{fontSize:12,color:"var(--text2)"}}>{p.parcela} / {p.totalParcelas}</div>
+                <div style={{fontSize:13,fontWeight:700}}>{fmtBRL(p.valor)}</div>
+                <div style={{fontSize:12}}>{fmtData(p.vencimento)}</div>
+                <div><Pill bg={cfg.bg} color={cfg.color} label={cfg.label} sm/></div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${p.pago?"#ccc":"var(--navy2)"}`,background:p.pago?"var(--bg2)":"var(--navy2)",color:p.pago?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{p.pago?"Desfazer":"Pagar"}</button>
+                  {p.pago && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
+                  {!p.pago && st==="vencido" && <button onClick={()=>abrirCobranca(p,"vencida")} title="Cobrar parcela vencida" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
+                  {!p.pago && st!=="vencido" && <button onClick={()=>abrirCobranca(p,"lembrete")} title="Enviar lembrete de vencimento" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text2)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
+                  <button onClick={()=>excluirUm(p.id)} title="Excluir parcela" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:0,lineHeight:1,marginLeft:2}}>🗑</button>
+                </div>
+              </div>
+            );})}
+          </div>
+          {grupo.totalOculto>0 && <p style={{fontSize:11,color:"var(--text3)",margin:"6px 2px 0"}}>+ {grupo.totalOculto} parcela(s) paga(s) mais antiga(s) não exibida(s) aqui.</p>}
+        </div>
+      ))}
       <p style={{fontSize:11,color:"var(--text2)",marginTop:8,textAlign:"right"}}>{lista.length} parcela(s)</p>
       {novoAcordo&&<ModalAcordo processos={processos} clientes={clientes} onSave={ps=>{setParcelas(x=>[...x,...ps]);setNovoAcordo(false);}} onClose={()=>setNovoAcordo(false)}/>}
       </>
