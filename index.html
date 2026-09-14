@@ -110,8 +110,13 @@ const fmtDataHora = s => { if(!s) return "—"; const d=new Date(s); return d.to
 const diasRest = s => Math.ceil((new Date(s+"T00:00:00") - hoje) / 864e5);
 const isUrgProc = p => p.status !== "encerrado" && p.prazo && diasRest(p.prazo) <= 7;
 const uid = () => Math.random().toString(36).slice(2,9);
+// Lê o campo "pago" de forma robusta: normalmente é um boolean de verdade,
+// mas se por algum motivo vier como texto do banco ("true"/"false"), o texto
+// "false" seria interpretado como verdadeiro em JavaScript — esta função
+// evita essa armadilha.
+const ehPago = v => v===true || v==="true" || v===1 || v==="1";
 const statusParcela = p => {
-  if(p.pago) return "pago";
+  if(ehPago(p.pago)) return "pago";
   const d = diasRest(p.vencimento);
   if(d < 0) return "vencido";
   if(d <= 7) return "aVencer";
@@ -2547,8 +2552,7 @@ function ModalFormCliente({cliente,onSave,onClose}){
     </div>
   );
 }
-let _pid=100;
-const mkParcelas=(procId,cliente,total,n,inicio)=>Array.from({length:n},(_,i)=>{const d=new Date(inicio+"T00:00:00");d.setMonth(d.getMonth()+i);const yy=d.getFullYear(),mm=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return{id:_pid++,procId,cliente,totalContrato:total,parcela:i+1,totalParcelas:n,valor:parseFloat((total/n).toFixed(2)),vencimento:`${yy}-${mm}-${dd}`,pago:false};});
+const mkParcelas=(procId,cliente,total,n,inicio)=>Array.from({length:n},(_,i)=>{const d=new Date(inicio+"T00:00:00");d.setMonth(d.getMonth()+i);const yy=d.getFullYear(),mm=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return{id:Date.now()+i,procId,cliente,totalContrato:total,parcela:i+1,totalParcelas:n,valor:parseFloat((total/n).toFixed(2)),vencimento:`${yy}-${mm}-${dd}`,pago:false};});
 
 function ModalAcordo({processos,clientes,onSave,onClose}){
   const [buscaCliente,setBuscaCliente]=useState("");
@@ -3326,8 +3330,8 @@ function PaginaDashboard({processos, parcelas, clientes, tarefas, setTarefas, ag
   const totalVencidoFin = parcelas.filter(p=>statusParcela(p)==="vencido").reduce((a,p)=>a+p.valor,0);
   const mesAtualStr = hoje.toISOString().slice(0,7);
   const parcelasMesAtual = parcelas.filter(p=>(p.vencimento||"").slice(0,7)===mesAtualStr);
-  const recebidoMes = parcelasMesAtual.filter(p=>p.pago).reduce((a,p)=>a+p.valor,0);
-  const abertoMes = parcelasMesAtual.filter(p=>!p.pago).reduce((a,p)=>a+p.valor,0);
+  const recebidoMes = parcelasMesAtual.filter(p=>ehPago(p.pago)).reduce((a,p)=>a+p.valor,0);
+  const abertoMes = parcelasMesAtual.filter(p=>!ehPago(p.pago)).reduce((a,p)=>a+p.valor,0);
   const previsaoMes = recebidoMes + abertoMes;
 
   const ultimasMovs = processos
@@ -3368,7 +3372,7 @@ function PaginaDashboard({processos, parcelas, clientes, tarefas, setTarefas, ag
   const dataMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1);
   const mesAnteriorStr = `${dataMesAnterior.getFullYear()}-${String(dataMesAnterior.getMonth()+1).padStart(2,"0")}`;
   const parcelasMesAnterior = parcelas.filter(p=>(p.vencimento||"").slice(0,7)===mesAnteriorStr);
-  const recebidoMesAnterior = parcelasMesAnterior.filter(p=>p.pago).reduce((a,p)=>a+p.valor,0);
+  const recebidoMesAnterior = parcelasMesAnterior.filter(p=>ehPago(p.pago)).reduce((a,p)=>a+p.valor,0);
   const variacaoRecebido = recebidoMesAnterior>0 ? Math.round(((recebidoMes-recebidoMesAnterior)/recebidoMesAnterior)*100) : null;
 
   const AlertCard = ({titulo, corIcone, corBg, icone, numero, sub, itens, verTodosLabel, onVerTodos, vazio}) => (
@@ -5173,7 +5177,7 @@ function ModalFormDespesa({despesa, onSave, onClose}){
             <div><span style={lbl}>Vencimento</span><input type="date" value={f.vencimento} onChange={e=>s("vencimento",e.target.value)} style={inp}/></div>
             <div>
               <span style={lbl}>Situação</span>
-              <select value={f.pago?"pago":"pendente"} onChange={e=>s("pago",e.target.value==="pago")} style={{...inp,padding:"7px 8px"}}>
+              <select value={ehPago(f.pago)?"pago":"pendente"} onChange={e=>s("pago",e.target.value==="pago")} style={{...inp,padding:"7px 8px"}}>
                 <option value="pendente">Pendente</option>
                 <option value="pago">Pago</option>
               </select>
@@ -5217,7 +5221,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
   },[despesasDoMes, filtroClassifDespesa, filtroStDespesa]);
 
   const totalDespesasMes = despesasDoMes.reduce((s,d)=>s+d.valor,0);
-  const totalDespesasPagas = despesasDoMes.filter(d=>d.pago).reduce((s,d)=>s+d.valor,0);
+  const totalDespesasPagas = despesasDoMes.filter(d=>ehPago(d.pago)).reduce((s,d)=>s+d.valor,0);
   const totalDespesasEscritorio = despesasDoMes.filter(d=>d.classificacao==="escritorio").reduce((s,d)=>s+d.valor,0);
   const totalDespesasPessoal = despesasDoMes.filter(d=>d.classificacao==="pessoal").reduce((s,d)=>s+d.valor,0);
 
@@ -5225,7 +5229,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
     setDespesas(ds=>form.id?ds.map(d=>d.id===form.id?form:d):[...ds,{...form,id:Date.now()}]);
     setEditandoDespesa(null); setNovaDespesa(false);
   };
-  const marcarPagoDespesa = id => setDespesas(ds=>ds.map(d=>d.id===id?{...d,pago:!d.pago}:d));
+  const marcarPagoDespesa = id => setDespesas(ds=>ds.map(d=>d.id===id?{...d,pago:!ehPago(d.pago)}:d));
   const excluirDespesa = id => {
     if(!confirm("Excluir esta despesa? Esta ação não pode ser desfeita.")) return;
     setDespesas(ds=>ds.filter(d=>d.id!==id));
@@ -5241,8 +5245,8 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
   const labelMes = mesAtivo==="todos" ? "Todos os meses" : new Date(mesAtivo+"-02").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
   const parcelasDoMes = mesAtivo==="todos" ? parcelas : parcelas.filter(p=>(p.vencimento||"").slice(0,7)===mesAtivo);
   const totalContrato=[...new Map(parcelas.map(p=>[`${p.procId}-${p.cliente}`,p.totalContrato])).values()].reduce((a,b)=>a+b,0);
-  const totalRecebido=parcelasDoMes.filter(p=>p.pago).reduce((a,p)=>a+p.valor,0);
-  const totalAberto=parcelasDoMes.filter(p=>!p.pago).reduce((a,p)=>a+p.valor,0);
+  const totalRecebido=parcelasDoMes.filter(p=>ehPago(p.pago)).reduce((a,p)=>a+p.valor,0);
+  const totalAberto=parcelasDoMes.filter(p=>!ehPago(p.pago)).reduce((a,p)=>a+p.valor,0);
   const totalVencido=parcelasDoMes.filter(p=>statusParcela(p)==="vencido").reduce((a,p)=>a+p.valor,0);
   const saldoLiquidoMes = totalRecebido - totalDespesasPagas;
   const lista=useMemo(()=>{const q=filtroCli.toLowerCase();return parcelasDoMes.filter(p=>{const st=statusParcela(p);return(!q||p.cliente.toLowerCase().includes(q))&&(filtroSt==="todos"||st===filtroSt);}).sort((a,b)=>new Date(a.vencimento)-new Date(b.vencimento));},[parcelasDoMes,filtroCli,filtroSt]);
@@ -5256,7 +5260,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
     const mesAtualStr = hoje.toISOString().slice(0,7);
     const atrasadas=[], esteMes=[], proximosMeses=[], pagas=[];
     filtradas.forEach(p=>{
-      if(p.pago){ pagas.push(p); return; }
+      if(ehPago(p.pago)){ pagas.push(p); return; }
       if(statusParcela(p)==="vencido"){ atrasadas.push(p); return; }
       const mesParcela = (p.vencimento||"").slice(0,7);
       (mesParcela===mesAtualStr ? esteMes : proximosMeses).push(p);
@@ -5274,7 +5278,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
   const totalAtrasado = gruposParcelas.find(g=>g.chave==="atrasadas")?.itens.reduce((s,p)=>s+p.valor,0) || 0;
   const totalEsteMes = gruposParcelas.find(g=>g.chave==="este_mes")?.itens.reduce((s,p)=>s+p.valor,0) || 0;
   const totalProximosMeses = gruposParcelas.find(g=>g.chave==="proximos")?.itens.reduce((s,p)=>s+p.valor,0) || 0;
-  const marcarPago=id=>setParcelas(ps=>ps.map(p=>p.id===id?{...p,pago:!p.pago}:p));
+  const marcarPago=id=>setParcelas(ps=>ps.map(p=>p.id===id?{...p,pago:!ehPago(p.pago)}:p));
 
   // Descobre o cliente de verdade (com e-mail) a partir da parcela: primeiro
   // tenta pelo processo vinculado, senão tenta bater o nome com o CRM.
@@ -5309,7 +5313,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
     }
     setGerandoReciboId(null);
   };
-  const vencendoHoje=parcelas.filter(p=>!p.pago&&diasRest(p.vencimento)>=0&&diasRest(p.vencimento)<=7);
+  const vencendoHoje=parcelas.filter(p=>!ehPago(p.pago)&&diasRest(p.vencimento)>=0&&diasRest(p.vencimento)<=7);
   const procNum=id=>id?(processos.find(p=>p.id===id)?.numero?.slice(0,22)+"…"||`Proc. ${id}`):"Sem processo vinculado";
   const hdr={fontSize:10,textTransform:"uppercase",letterSpacing:".6px",color:"var(--text2)",fontWeight:700};
   const idsVisiveis = gruposParcelas.flatMap(g=>g.itens.map(p=>p.id));
@@ -5424,10 +5428,10 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
                 <div style={{fontSize:12}}>{fmtData(p.vencimento)}</div>
                 <div><Pill bg={cfg.bg} color={cfg.color} label={cfg.label} sm/></div>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${p.pago?"#ccc":"var(--navy2)"}`,background:p.pago?"var(--bg2)":"var(--navy2)",color:p.pago?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{p.pago?"Desfazer":"Pagar"}</button>
-                  {p.pago && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
-                  {!p.pago && st==="vencido" && <button onClick={()=>abrirCobranca(p,"vencida")} title="Cobrar parcela vencida" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
-                  {!p.pago && st!=="vencido" && <button onClick={()=>abrirCobranca(p,"lembrete")} title="Enviar lembrete de vencimento" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text2)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
+                  <button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${st==="pago"?"#ccc":"var(--navy2)"}`,background:st==="pago"?"var(--bg2)":"var(--navy2)",color:st==="pago"?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{st==="pago"?"Desfazer":"Pagar"}</button>
+                  {st==="pago" && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
+                  {st!=="pago" && st==="vencido" && <button onClick={()=>abrirCobranca(p,"vencida")} title="Cobrar parcela vencida" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
+                  {st!=="pago" && st!=="vencido" && <button onClick={()=>abrirCobranca(p,"lembrete")} title="Enviar lembrete de vencimento" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text2)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
                   <span style={{width:1,height:18,background:"var(--border1)",margin:"0 2px"}}/>
                   <button onClick={()=>excluirUm(p.id)} title="Excluir parcela" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:"0 4px",lineHeight:1}}>🗑</button>
                 </div>
@@ -5480,7 +5484,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
               <div style={{fontSize:12}}>{fmtData(d.vencimento)}</div>
               <div><Pill bg={cfg.bg} color={cfg.color} label={cfg.label} sm/></div>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <button onClick={()=>marcarPagoDespesa(d.id)} title={d.pago?"Desfazer pagamento":"Marcar como pago"} style={{fontSize:10,padding:"4px 8px",cursor:"pointer",borderRadius:5,border:`1px solid ${d.pago?"#ccc":"var(--navy2)"}`,background:d.pago?"var(--bg2)":"var(--navy2)",color:d.pago?"var(--text2)":"#fff",fontWeight:600}}>{d.pago?"↺":"✓"}</button>
+                <button onClick={()=>marcarPagoDespesa(d.id)} title={ehPago(d.pago)?"Desfazer pagamento":"Marcar como pago"} style={{fontSize:10,padding:"4px 8px",cursor:"pointer",borderRadius:5,border:`1px solid ${ehPago(d.pago)?"#ccc":"var(--navy2)"}`,background:ehPago(d.pago)?"var(--bg2)":"var(--navy2)",color:ehPago(d.pago)?"var(--text2)":"#fff",fontWeight:600}}>{ehPago(d.pago)?"↺":"✓"}</button>
                 <button onClick={()=>setEditandoDespesa(d)} title="Editar" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text2)",fontSize:13,padding:0}}>✎</button>
                 <button onClick={()=>excluirDespesa(d.id)} title="Excluir" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:0,lineHeight:1}}>🗑</button>
               </div>
@@ -5518,10 +5522,10 @@ function PaginaRelatorios({processos,parcelas,clientes}){
     });
     if(parts.length){
       txt+=`━━ FINANCEIRO ━━\n\n`;
-      const pago=parts.filter(x=>x.pago).reduce((a,x)=>a+x.valor,0);
-      const aberto=parts.filter(x=>!x.pago).reduce((a,x)=>a+x.valor,0);
+      const pago=parts.filter(x=>ehPago(x.pago)).reduce((a,x)=>a+x.valor,0);
+      const aberto=parts.filter(x=>!ehPago(x.pago)).reduce((a,x)=>a+x.valor,0);
       txt+=`Total pago: ${fmtBRL(pago)}\nSaldo em aberto: ${fmtBRL(aberto)}\n\n`;
-      const prox=parts.filter(x=>!x.pago).sort((a,b)=>new Date(a.vencimento)-new Date(b.vencimento)).slice(0,3);
+      const prox=parts.filter(x=>!ehPago(x.pago)).sort((a,b)=>new Date(a.vencimento)-new Date(b.vencimento)).slice(0,3);
       if(prox.length){txt+=`Próximas parcelas:\n`;prox.forEach(x=>txt+=`   • Parcela ${x.parcela}/${x.totalParcelas} — ${fmtBRL(x.valor)} — ${fmtData(x.vencimento)}\n`);}
       txt+="\n";
     }
