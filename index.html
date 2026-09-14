@@ -814,27 +814,38 @@ Michelli Abreu Advocacia`
   );
 }
 
-function ModalCobrarParcela({cliente, parcela, numeroProcesso, onClose}){
-  const dias = diasRest(parcela.vencimento);
-  const [assunto,setAssunto] = useState(`Cobrança — parcela ${parcela.parcela}/${parcela.totalParcelas} vencida`);
-  const referenteA = numeroProcesso
-    ? `da parcela ${parcela.parcela}/${parcela.totalParcelas} dos honorários advocatícios contratados, referente ao processo nº ${numeroProcesso}`
-    : `da parcela ${parcela.parcela}/${parcela.totalParcelas} dos honorários advocatícios contratados`;
-  const [corpo,setCorpo] = useState(
-`Prezado(a) ${cliente?.nome || parcela.cliente || "(cliente)"},
+function ModalCobrarParcela({cliente, parcela, tipo, onClose}){
+  const nomeCliente = cliente?.nome || parcela.cliente || "(cliente)";
+  const valor = fmtBRL(parcela.valor);
+  const data = fmtData(parcela.vencimento);
+  const [assunto,setAssunto] = useState(tipo==="lembrete" ? `Lembrete — parcela ${parcela.parcela}/${parcela.totalParcelas} de honorários` : `Cobrança — parcela ${parcela.parcela}/${parcela.totalParcelas} vencida`);
+  const [corpo,setCorpo] = useState(tipo==="lembrete"
+    ? `Olá, ${nomeCliente}. Tudo bem?
 
-Verificamos que o pagamento ${referenteA}, no valor de ${fmtBRL(parcela.valor)}, com vencimento em ${fmtData(parcela.vencimento)}, ainda consta em aberto${dias<0?` (${Math.abs(dias)} dia(s) em atraso)`:""}.
+Passando para lembrar que a parcela de honorários no valor de R$ ${valor} terá vencimento em ${data}.
 
-Solicitamos gentilmente a regularização o quanto antes. Segue a chave PIX para pagamento:
+Esta é uma mensagem automática de lembrete enviada pelo nosso sistema de controle financeiro.
 
-Chave PIX (CPF): ${PIX_RECEBIMENTO}
+Por segurança, informamos que qualquer pagamento deverá ser realizado exclusivamente em conta de titularidade de Michelli Costa de Abreu. Não solicitamos pagamentos, transferências ou PIX para contas de terceiros.
 
-Após a confirmação do pagamento, pedimos a gentileza de nos enviar o comprovante para que possamos dar baixa e emitir o recibo.
-
-Qualquer dúvida, estamos à disposição.
+Caso o pagamento já tenha sido programado, por favor, desconsidere esta mensagem.
 
 Atenciosamente,
-Michelli Abreu Advocacia`
+Michelli Costa de Abreu
+Advogada – OAB/RJ 155.134`
+    : `Olá, ${nomeCliente}. Tudo bem?
+
+Identificamos em nosso sistema que a parcela de honorários no valor de R$ ${valor}, com vencimento em ${data}, encontra-se pendente.
+
+Pedimos, por gentileza, que verifique a regularização do pagamento. Caso já tenha efetuado o pagamento, desconsidere esta mensagem.
+
+Por segurança, qualquer pagamento deverá ser realizado exclusivamente em conta de titularidade de Michelli Costa de Abreu. Não solicitamos pagamentos, transferências ou PIX para contas de terceiros.
+
+Em caso de dúvida ou necessidade de atualização do valor, entre em contato conosco.
+
+Atenciosamente,
+Michelli Costa de Abreu
+Advogada – OAB/RJ 155.134`
   );
   const abrirGmail = () => {
     const to = encodeURIComponent(cliente?.email || "");
@@ -847,11 +858,11 @@ Michelli Abreu Advocacia`
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:520,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
       <div style={{background:"#fff",width:540,maxWidth:"100%",maxHeight:"90vh",overflow:"auto",borderRadius:8,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.2)"}}>
-        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 14px",fontWeight:600}}>Cobrar parcela vencida</p>
+        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 14px",fontWeight:600}}>{tipo==="lembrete"?"Lembrete de vencimento":"Cobrar parcela vencida"}</p>
         {!cliente?.email && <div style={{background:"var(--amber-bg)",border:"1px solid #F5CE85",borderRadius:5,padding:"8px 12px",marginBottom:12,fontSize:11.5,color:"var(--amber)"}}>⚠ Cliente sem e-mail cadastrado no CRM — o envio por WhatsApp continua disponível.</div>}
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div><span style={lbl}>Assunto</span><input value={assunto} onChange={e=>setAssunto(e.target.value)} style={inp}/></div>
-          <div><span style={lbl}>Mensagem</span><textarea value={corpo} onChange={e=>setCorpo(e.target.value)} style={{...inp,minHeight:260,resize:"vertical",fontSize:12,lineHeight:1.5}}/></div>
+          <div><span style={lbl}>Mensagem</span><textarea value={corpo} onChange={e=>setCorpo(e.target.value)} style={{...inp,minHeight:280,resize:"vertical",fontSize:12,lineHeight:1.5}}/></div>
         </div>
         <div style={{marginTop:18,display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={onClose} style={btnSec}>Fechar</button>
@@ -5194,11 +5205,10 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
     }
     return (clientes||[]).find(x=>(x.nome||"").trim().toLowerCase()===(p.cliente||"").trim().toLowerCase()) || null;
   };
-  const [cobrandoParcela,setCobrandoParcela] = useState(null); // {cliente, parcela, numeroProcesso}
-  const abrirCobranca = (p) => {
+  const [cobrandoParcela,setCobrandoParcela] = useState(null); // {cliente, parcela, tipo}
+  const abrirCobranca = (p, tipo) => {
     const cliente = resolverClienteDaParcela(p);
-    const proc = p.procId ? processos.find(x=>x.id===p.procId) : null;
-    setCobrandoParcela({cliente, parcela:p, numeroProcesso: proc?.numero || null});
+    setCobrandoParcela({cliente, parcela:p, tipo});
   };
   const [gerandoReciboId,setGerandoReciboId] = useState(null);
   const [enviandoRecibo,setEnviandoRecibo] = useState(null); // {cliente, parcela}
@@ -5322,7 +5332,8 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${p.pago?"#ccc":"var(--navy2)"}`,background:p.pago?"var(--bg2)":"var(--navy2)",color:p.pago?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{p.pago?"Desfazer":"Pagar"}</button>
               {p.pago && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
-              {!p.pago && st==="vencido" && <button onClick={()=>abrirCobranca(p)} title="Enviar cobrança com PIX" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
+              {!p.pago && st==="vencido" && <button onClick={()=>abrirCobranca(p,"vencida")} title="Cobrar parcela vencida" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
+              {!p.pago && st!=="vencido" && <button onClick={()=>abrirCobranca(p,"lembrete")} title="Enviar lembrete de vencimento" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text2)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
             </div>
             <button onClick={()=>excluirUm(p.id)} title="Excluir parcela" style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",fontSize:15,padding:0,lineHeight:1}}>🗑</button>
           </div>
@@ -5385,7 +5396,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
       )}
       {erroRecibo && <p style={{fontSize:12,color:"var(--red)",marginTop:10}}>{erroRecibo}</p>}
       {enviandoRecibo && <ModalEnviarRecibo cliente={enviandoRecibo.cliente} parcela={enviandoRecibo.parcela} qualificacao={enviandoRecibo.qualificacao} numeroProcesso={enviandoRecibo.numeroProcesso} onClose={()=>setEnviandoRecibo(null)}/>}
-      {cobrandoParcela && <ModalCobrarParcela cliente={cobrandoParcela.cliente} parcela={cobrandoParcela.parcela} numeroProcesso={cobrandoParcela.numeroProcesso} onClose={()=>setCobrandoParcela(null)}/>}
+      {cobrandoParcela && <ModalCobrarParcela cliente={cobrandoParcela.cliente} parcela={cobrandoParcela.parcela} tipo={cobrandoParcela.tipo} onClose={()=>setCobrandoParcela(null)}/>}
     </div>
   );
 }
