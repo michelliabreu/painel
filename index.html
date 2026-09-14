@@ -117,6 +117,7 @@ const uid = () => Math.random().toString(36).slice(2,9);
 const ehPago = v => v===true || v==="true" || v===1 || v==="1";
 const statusParcela = p => {
   if(ehPago(p.pago)) return "pago";
+  if(p.valorPago>0 && p.valorPago<p.valor) return "parcial";
   const d = diasRest(p.vencimento);
   if(d < 0) return "vencido";
   if(d <= 7) return "aVencer";
@@ -251,7 +252,7 @@ const CC = {
 };
 const CLASSIFICACOES_VALIDAS = Object.keys(CC);
 const TC = {judicial:{label:"Judicial",bg:"#F0EBFC",color:"#5B21B6"},administrativo:{label:"Administrativo",bg:"#E1F5EE",color:"#085041"}};
-const PC = {pago:{label:"Pago",bg:"#EAF6EE",color:"#15803D"},pendente:{label:"Pendente",bg:"#F1F2F4",color:"#374151"},vencido:{label:"Vencido",bg:"#FCEAEA",color:"#B91C1C"},aVencer:{label:"A vencer",bg:"#FEF3DC",color:"#B45309"}};
+const PC = {pago:{label:"Pago",bg:"#EAF6EE",color:"#15803D"},pendente:{label:"Pendente",bg:"#F1F2F4",color:"#374151"},vencido:{label:"Vencido",bg:"#FCEAEA",color:"#B91C1C"},aVencer:{label:"A vencer",bg:"#FEF3DC",color:"#B45309"},parcial:{label:"Parcial",bg:"#F3E9EE",color:"#AD8398"}};
 const CLASSIFICACAO_DESPESA_CFG = {
   escritorio: {label:"Escritório", bg:"#E8F0FA", color:"#16345C"},
   pessoal: {label:"Pessoal", bg:"#F2EDFE", color:"#6B21A8"},
@@ -813,6 +814,68 @@ Michelli Abreu Advocacia`
           <button onClick={onClose} style={btnSec}>Fechar</button>
           <button onClick={abrirWhatsapp} style={{...btnSec,display:"flex",alignItems:"center",gap:6}}>💬 WhatsApp</button>
           <button onClick={abrirGmail} disabled={!cliente?.email} style={{...btnPri,opacity:cliente?.email?1:.5,display:"flex",alignItems:"center",gap:6}}>✉ Gmail</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Registra pagamento parcial de uma parcela. Se sobrar saldo, a advogada
+// escolhe: distribuir esse saldo entre as próximas parcelas do mesmo acordo
+// (aumentando o valor delas), ou deixar essa mesma parcela com o saldo em
+// aberto (fica com status "Parcial", sem mexer nas outras).
+function ModalPagamentoParcial({parcela, parcelasPosteriores, onSave, onClose}){
+  const [valorPago,setValorPago] = useState(String(parcela.valor));
+  const [modo,setModo] = useState("distribuir");
+  const [erro,setErro] = useState("");
+  const vp = parseFloat(valorPago)||0;
+  const saldo = Math.max(0, parseFloat((parcela.valor - vp).toFixed(2)));
+  const temProximas = parcelasPosteriores.length>0;
+
+  const salvar = () => {
+    if(vp<=0){ setErro("Informe um valor pago maior que zero."); return; }
+    if(vp>parcela.valor){ setErro("O valor pago não pode ser maior que o valor da parcela."); return; }
+    if(vp>=parcela.valor){
+      onSave({parcelaAtualizada:{...parcela, pago:true, valorPago:null}, irmasAtualizadas:[]});
+      return;
+    }
+    if(modo==="distribuir"){
+      if(!temProximas){ setErro("Não há parcelas posteriores neste acordo para distribuir o saldo — escolha \"Deixar em aberto\"."); return; }
+      const acrescimo = saldo/parcelasPosteriores.length;
+      const irmasAtualizadas = parcelasPosteriores.map(p=>({...p, valor: parseFloat((p.valor+acrescimo).toFixed(2))}));
+      onSave({parcelaAtualizada:{...parcela, pago:true, valorPago:null}, irmasAtualizadas});
+    } else {
+      onSave({parcelaAtualizada:{...parcela, pago:false, valorPago:vp}, irmasAtualizadas:[]});
+    }
+  };
+
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:520,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:"#fff",width:420,maxWidth:"100%",borderRadius:10,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
+        <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 4px",fontWeight:600}}>Registrar pagamento</p>
+        <p style={{fontSize:13,color:"var(--text2)",margin:"0 0 16px"}}>{parcela.cliente} · parcela {parcela.parcela}/{parcela.totalParcelas} · valor total {fmtBRL(parcela.valor)}</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><span style={lbl}>Valor pago agora (R$)</span><input type="number" step="0.01" value={valorPago} onChange={e=>setValorPago(e.target.value)} style={inp}/></div>
+          {saldo>0 && (
+            <>
+              <div style={{background:"var(--amber-bg)",borderRadius:5,padding:"8px 12px",fontSize:12,color:"var(--amber)"}}>Saldo restante desta parcela: <strong>{fmtBRL(saldo)}</strong></div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <label style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,cursor:temProximas?"pointer":"not-allowed",opacity:temProximas?1:.5}}>
+                  <input type="radio" checked={modo==="distribuir"} onChange={()=>setModo("distribuir")} disabled={!temProximas} style={{marginTop:2}}/>
+                  <span>Distribuir o saldo entre as {parcelasPosteriores.length} parcela(s) seguinte(s) deste acordo {temProximas?`(+ ${fmtBRL(saldo/Math.max(1,parcelasPosteriores.length))} em cada)`:"(não há parcelas seguintes)"}</span>
+                </label>
+                <label style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12.5,cursor:"pointer"}}>
+                  <input type="radio" checked={modo==="aberto"} onChange={()=>setModo("aberto")} style={{marginTop:2}}/>
+                  <span>Deixar o saldo em aberto nesta mesma parcela (fica "Parcial")</span>
+                </label>
+              </div>
+            </>
+          )}
+        </div>
+        {erro && <p style={{fontSize:12,color:"var(--red)",margin:"12px 0 0"}}>{erro}</p>}
+        <div style={{marginTop:18,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={btnSec}>Cancelar</button>
+          <button onClick={salvar} style={btnPri}>Confirmar pagamento</button>
         </div>
       </div>
     </div>
@@ -5245,6 +5308,16 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
   const labelMes = mesAtivo==="todos" ? "Todos os meses" : new Date(mesAtivo+"-02").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
   const parcelasDoMes = mesAtivo==="todos" ? parcelas : parcelas.filter(p=>(p.vencimento||"").slice(0,7)===mesAtivo);
   const totalContrato=[...new Map(parcelas.map(p=>[`${p.procId}-${p.cliente}`,p.totalContrato])).values()].reduce((a,b)=>a+b,0);
+  const detalheContratosPorCliente = useMemo(()=>{
+    const porAcordo = new Map();
+    (parcelas||[]).forEach(p=>{
+      const chave = `${p.procId}-${p.cliente}`;
+      if(!porAcordo.has(chave)) porAcordo.set(chave, {cliente:p.cliente, valor:p.totalContrato});
+    });
+    const porCliente = new Map();
+    porAcordo.forEach(({cliente,valor})=>porCliente.set(cliente,(porCliente.get(cliente)||0)+valor));
+    return [...porCliente.entries()].map(([cliente,valor])=>({cliente,valor})).sort((a,b)=>b.valor-a.valor);
+  },[parcelas]);
   const totalRecebido=parcelasDoMes.filter(p=>ehPago(p.pago)).reduce((a,p)=>a+p.valor,0);
   const totalAberto=parcelasDoMes.filter(p=>!ehPago(p.pago)).reduce((a,p)=>a+p.valor,0);
   const totalVencido=parcelasDoMes.filter(p=>statusParcela(p)==="vencido").reduce((a,p)=>a+p.valor,0);
@@ -5261,7 +5334,7 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
     const atrasadas=[], esteMes=[], proximosMeses=[], pagas=[];
     filtradas.forEach(p=>{
       if(ehPago(p.pago)){ pagas.push(p); return; }
-      if(statusParcela(p)==="vencido"){ atrasadas.push(p); return; }
+      if(diasRest(p.vencimento)<0){ atrasadas.push(p); return; }
       const mesParcela = (p.vencimento||"").slice(0,7);
       (mesParcela===mesAtualStr ? esteMes : proximosMeses).push(p);
     });
@@ -5290,9 +5363,27 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
     return (clientes||[]).find(x=>(x.nome||"").trim().toLowerCase()===(p.cliente||"").trim().toLowerCase()) || null;
   };
   const [cobrandoParcela,setCobrandoParcela] = useState(null); // {cliente, parcela, tipo}
+  const [vendoTotalContratado,setVendoTotalContratado] = useState(false);
   const abrirCobranca = (p, tipo) => {
     const cliente = resolverClienteDaParcela(p);
     setCobrandoParcela({cliente, parcela:p, tipo});
+  };
+
+  // Parcelas do mesmo acordo (mesmo processo + cliente + valor total original),
+  // com número de parcela maior que a atual e ainda não pagas — candidatas a
+  // receber o saldo de um pagamento parcial.
+  const [pagandoParcial,setPagandoParcial] = useState(null); // parcela
+  const parcelasPosterioresDoAcordo = (p) => (parcelas||[]).filter(x=>
+    x.id!==p.id && x.procId===p.procId && x.cliente===p.cliente && x.totalContrato===p.totalContrato &&
+    x.parcela>p.parcela && !ehPago(x.pago)
+  ).sort((a,b)=>a.parcela-b.parcela);
+  const salvarPagamentoParcial = ({parcelaAtualizada, irmasAtualizadas}) => {
+    setParcelas(ps=>ps.map(p=>{
+      if(p.id===parcelaAtualizada.id) return parcelaAtualizada;
+      const irma = irmasAtualizadas.find(i=>i.id===p.id);
+      return irma || p;
+    }));
+    setPagandoParcial(null);
   };
   const [gerandoReciboId,setGerandoReciboId] = useState(null);
   const [enviandoRecibo,setEnviandoRecibo] = useState(null); // {cliente, parcela}
@@ -5377,8 +5468,10 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
 
       {abaFinanceiro==="honorarios" ? (
       <>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
-        <KpiCard label="Total contratado (geral)" value={fmtBRL(totalContrato)} color="var(--navy)" icon="📄"/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+        <button onClick={()=>setVendoTotalContratado(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:11.5,color:"var(--text2)",textDecoration:"underline",padding:0}}>📄 Ver total contratado (geral)</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
         <KpiCard label="Atrasado" value={fmtBRL(totalAtrasado)} color="var(--red)" icon="⚠"/>
         <KpiCard label="A vencer este mês" value={fmtBRL(totalEsteMes)} color="var(--amber)" icon="⏳"/>
         <KpiCard label="Próximos meses" value={fmtBRL(totalProximosMeses)} color="var(--navy2)" icon="🗓"/>
@@ -5424,11 +5517,12 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
                 <input type="checkbox" checked={!!selecionados[p.id]} onChange={()=>toggleUm(p.id)} style={{width:15,height:15,cursor:"pointer"}}/>
                 <div><p style={{fontSize:11,fontFamily:p.procId?"monospace":"inherit",fontStyle:p.procId?"normal":"italic",color:"var(--text2)",margin:"0 0 2px"}}>{procNum(p.procId)}</p><p style={{fontSize:13,fontWeight:600,margin:0}}>{p.cliente}</p></div>
                 <div style={{fontSize:12,color:"var(--text2)"}}>{p.parcela} / {p.totalParcelas}</div>
-                <div style={{fontSize:13,fontWeight:700}}>{fmtBRL(p.valor)}</div>
+                <div style={{fontSize:13,fontWeight:700}}>{fmtBRL(p.valor)}{st==="parcial"&&<span style={{display:"block",fontSize:10,fontWeight:500,color:"var(--text2)"}}>{fmtBRL(p.valorPago)} pago · falta {fmtBRL(p.valor-p.valorPago)}</span>}</div>
                 <div style={{fontSize:12}}>{fmtData(p.vencimento)}</div>
                 <div><Pill bg={cfg.bg} color={cfg.color} label={cfg.label} sm/></div>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
                   <button onClick={()=>marcarPago(p.id)} style={{fontSize:10,padding:"5px 11px",cursor:"pointer",borderRadius:5,border:`1px solid ${st==="pago"?"#ccc":"var(--navy2)"}`,background:st==="pago"?"var(--bg2)":"var(--navy2)",color:st==="pago"?"var(--text2)":"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{st==="pago"?"Desfazer":"Pagar"}</button>
+                  {st!=="pago" && <button onClick={()=>setPagandoParcial(p)} title="Registrar pagamento parcial" style={{fontSize:10,padding:"5px 8px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--purple)",fontWeight:700,whiteSpace:"nowrap"}}>½</button>}
                   {st==="pago" && <button onClick={()=>gerarRecibo(p)} disabled={gerandoReciboId===p.id} title="Gerar recibo e enviar ao cliente" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--accent)",fontWeight:600,whiteSpace:"nowrap",opacity:gerandoReciboId===p.id?.6:1}}>{gerandoReciboId===p.id?"…":"🧾"}</button>}
                   {st!=="pago" && st==="vencido" && <button onClick={()=>abrirCobranca(p,"vencida")} title="Cobrar parcela vencida" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid #F3B8B8",background:"#fff",color:"var(--red)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
                   {st!=="pago" && st!=="vencido" && <button onClick={()=>abrirCobranca(p,"lembrete")} title="Enviar lembrete de vencimento" style={{fontSize:10,padding:"5px 9px",cursor:"pointer",borderRadius:5,border:"1px solid var(--border2)",background:"#fff",color:"var(--text2)",fontWeight:600,whiteSpace:"nowrap"}}>💬</button>}
@@ -5499,6 +5593,27 @@ function PaginaFinanceiro({parcelas,setParcelas,despesas,setDespesas,processos,c
       {erroRecibo && <p style={{fontSize:12,color:"var(--red)",marginTop:10}}>{erroRecibo}</p>}
       {enviandoRecibo && <ModalEnviarRecibo cliente={enviandoRecibo.cliente} parcela={enviandoRecibo.parcela} qualificacao={enviandoRecibo.qualificacao} numeroProcesso={enviandoRecibo.numeroProcesso} onClose={()=>setEnviandoRecibo(null)}/>}
       {cobrandoParcela && <ModalCobrarParcela cliente={cobrandoParcela.cliente} parcela={cobrandoParcela.parcela} tipo={cobrandoParcela.tipo} onClose={()=>setCobrandoParcela(null)}/>}
+      {pagandoParcial && <ModalPagamentoParcial parcela={pagandoParcial} parcelasPosteriores={parcelasPosterioresDoAcordo(pagandoParcial)} onSave={salvarPagamentoParcial} onClose={()=>setPagandoParcial(null)}/>}
+      {vendoTotalContratado && (
+        <div onClick={e=>e.target===e.currentTarget&&setVendoTotalContratado(false)} style={{position:"fixed",inset:0,background:"rgba(15,38,69,.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+          <div style={{background:"#fff",width:420,maxWidth:"100%",maxHeight:"80vh",overflow:"auto",borderRadius:10,padding:"1.5rem",boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
+            <p style={{fontSize:10,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".7px",margin:"0 0 4px",fontWeight:600}}>Total contratado (geral)</p>
+            <p style={{fontSize:24,fontWeight:800,color:"var(--navy)",margin:"0 0 16px"}}>{fmtBRL(totalContrato)}</p>
+            <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",color:"var(--text2)",margin:"0 0 8px"}}>Por cliente</p>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {detalheContratosPorCliente.map(({cliente,valor})=>(
+                <div key={cliente} style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"7px 0",borderBottom:"1px solid var(--border1)"}}>
+                  <span>{cliente}</span>
+                  <strong>{fmtBRL(valor)}</strong>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:16,display:"flex",justifyContent:"flex-end"}}>
+              <button onClick={()=>setVendoTotalContratado(false)} style={btnPri}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
